@@ -72,5 +72,5 @@ optional arguments:
   --pretrained_ckpt PRETRAINED_CKPT
                         Default points to model weights path. Set to 'scratch' for random initialization
   --exp_name EXP_NAME
-
+                        Prefix to attach to training logs in folder and file names
 ```
