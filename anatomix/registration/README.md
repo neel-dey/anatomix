@@ -21,7 +21,7 @@ fixed is a CT volume:
 python run_convex_adam_with_network_feats.py \
     --fixed fixed.nii.gz \
     --moving moving.nii.gz \
-    --ckpt_path ../../model-weights/best_val_net_G.pth \
+    --ckpt_path ../../model-weights/anatomix.pth \
     --exp_name demo \
     --use_mask \
     --path_mask_fixed fixed_mask.nii.gz \

@@ -38,7 +38,7 @@ sets in the `train_segmentation.py` scripts are used for model selection.
 Once you have your data organized, you could start a finetuning run for `NCLASS`
 -segmentation with 3 finetuning volumes with our pretrained weights as:
 ```bash
-python train_segmentation --dataset ./dataset/ --n_classes NCLASSES --pretrained_ckpt ../../model-weights/best_val_net_G.pth
+python train_segmentation --dataset ./dataset/ --n_classes NCLASSES --pretrained_ckpt ../../model-weights/anatomix.pth
 ```
 
 To train from scratch / random initialization instead:

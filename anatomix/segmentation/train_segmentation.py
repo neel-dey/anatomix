@@ -293,7 +293,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--pretrained_ckpt',
         type=str,
-        default='../../model-weights/best_val_net_G.pth',
+        default='../../model-weights/anatomix.pth',
         help="Default points to model weights path. Set to 'scratch' for random initialization",
     )
     parser.add_argument(
