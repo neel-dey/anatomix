@@ -1,6 +1,6 @@
 # anatomix
 
-### [Paper](TBD)
+### [Paper](https://arxiv.org/abs/2411.02372)
 
 `anatomix` is a general-purpose feature extractor for 3D volumes. For any new biomedical dataset or task,
 - Its out-of-the-box features (shown below) are invariant to most forms of nuisance imaging variation.
