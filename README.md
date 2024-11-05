@@ -3,8 +3,8 @@
 ### [Paper](TBD)
 
 `anatomix` is a general-purpose feature extractor for 3D volumes. For any new biomedical dataset or task,
-- It's out-of-the-box features (shown below) are invariant to most forms of nuisance imaging variation.
-- It's out-of-the-box weights are a good initialization for finetuning when given limited annotations.
+- Its out-of-the-box features (shown below) are invariant to most forms of nuisance imaging variation.
+- Its out-of-the-box weights are a good initialization for finetuning when given limited annotations.
 
 This respectively leads to:
 - SOTA 3D training-free multi-modality image registration
