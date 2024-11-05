@@ -68,6 +68,22 @@ pip3 install torch torchvision torchaudio
 pip install monai==1.3.2 tensorboard
 ```
 
+## Citation
+
+If you find our work useful, please consider citing:
+
+```
+@misc{dey2024learninggeneralpurposebiomedicalvolume,
+      title={Learning General-Purpose Biomedical Volume Representations using Randomized Synthesis}, 
+      author={Neel Dey and Benjamin Billot and Hallee E. Wong and Clinton J. Wang and Mengwei Ren and P. Ellen Grant and Adrian V. Dalca and Polina Golland},
+      year={2024},
+      eprint={2411.02372},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2411.02372}, 
+}
+```
+
 ## Acknowledgements
 
 Portions of this repository have been taken from the [Contrastive Unpaired Translation](https://github.com/taesungp/contrastive-unpaired-translation) 
