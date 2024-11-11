@@ -1,6 +1,8 @@
 # anatomix
 
-### [Paper](https://arxiv.org/abs/2411.02372)
+### [Paper](https://arxiv.org/abs/2411.02372) | [Training-free registration](https://github.com/neel-dey/anatomix/tree/main/anatomix/registration) | [Few-shot segmentation](https://github.com/neel-dey/anatomix/tree/main/anatomix/segmentation)
+
+![Highlight collage](https://www.neeldey.com/files/anatomix_github_highlight.png)
 
 `anatomix` is a general-purpose feature extractor for 3D volumes. For any new biomedical dataset or task,
 - Its out-of-the-box features (shown below) are invariant to most forms of nuisance imaging variation.
@@ -11,8 +13,6 @@ This respectively leads to:
 - SOTA 3D few-shot semantic segmentation
 
 (all without any dataset or domain specific pretraining)
-
-![Features produced by network](https://www.neeldey.com/files/highlight_collage_v2.png)
 
 `anatomix` is just a pretrained UNet! Use it for whatever you like.
 
