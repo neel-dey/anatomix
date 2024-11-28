@@ -48,16 +48,79 @@ def convex_adam(
     moving_seg=None,
     downscale_feat_scalar=0.1,
 ):
+    """
+    This function first extracts anatomix and MIND features from the input
+    images, concatenates them, and then performs coupled convex optimization
+    with Adam instance optimization for image registration.
+
+    Parameters
+    ----------
+    ckpt_path : str
+        Path to the model checkpoint.
+    expname : str
+        Name of the experiment for logging and output file naming.
+    lambda_weight : float
+        Diffusion regularization weight during Adam instance optimization.
+    grid_sp : int
+        Grid spacing for the optimization grid.
+    disp_hw : int
+        Discretized search space half-width for optimization.
+    selected_niter : int
+        Number of iterations for Adam instance optimization.
+    selected_smooth : int
+        Degree of post-smoothing for output displacements (optional).
+    grid_sp_adam : int, optional
+        Grid spacing for Adam instance optimization (default is 2).
+    ic : bool, optional
+        If True, enable inverse consistency (default is True).
+    result_path : str, optional
+        Directory path to save output results (default is './').
+    fixed_image : str, optional
+        Path to the fixed image file (*.nii.gz format).
+    moving_image : str, optional
+        Path to the moving image file (*.nii.gz format).
+    use_mask : bool, optional
+        Whether to use masks for registration (default is False).
+    fixed_mask : str, optional
+        Path to the fixed image mask file (*.nii.gz format).
+    moving_mask : str, optional
+        Path to the moving image mask file (*.nii.gz format).
+    fixed_minclip : float, optional
+        Minimum intensity clipping value for the fixed image (optional).
+    fixed_maxclip : float, optional
+        Maximum intensity clipping value for the fixed image (optional).
+    moving_minclip : float, optional
+        Minimum intensity clipping value for the moving image (optional).
+    moving_maxclip : float, optional
+        Maximum intensity clipping value for the moving image (optional).
+    warp_seg : bool, optional
+        Whether to warp a segmentation label map (default is False).
+    fixed_seg : str, optional
+        Path to the fixed image segmentation file (*.nii.gz format).
+    moving_seg : str, optional
+        Path to the moving image segmentation file (*.nii.gz format).
+    downscale_feat_scalar : float, optional
+        Scalar to downscale network feature intensities (default is 0.1).
+
+    Returns
+    -------
+    None
+        The function saves the output files, including warped images,
+        displacement fields, and optionally warped label maps, to the 
+        specified result directory.
+    """
     
     # load model:
-    print('loading model')
+    print('Loading model')
+    if not os.path.isfile(ckpt_path):
+        raise FileNotFoundError(f"Checkpoint file not found: {ckpt_path}")
+    
     model = load_model(ckpt_path)
     
     # load images:
     affine_mtx = nib.load(fixed_image).affine
     fixedim = nib.load(fixed_image).get_fdata()
     movingim = nib.load(moving_image).get_fdata()
-    movsavename = os.path.basename(moving_image)[:-7] #TODO: fix hardcoding
     
     fixed_ch0 = torch.from_numpy(
         fixedim[np.newaxis, np.newaxis, ...],
@@ -67,8 +130,15 @@ def convex_adam(
         movingim[np.newaxis, np.newaxis, ...],
     ).float().cuda()
 
-    # get features:
-    print('processing feats')
+    # Get a prefix with which to name saved files:
+    fname = os.path.basename(moving_image)
+    if fname.endswith(".nii.gz"):
+        movsavename = fname[:-7]  # Remove '.nii.gz'
+    else:
+        movsavename = os.path.splitext(fname)[0]
+
+    # Get anatomix features:
+    print('Running network on input images')
     pred_fixed, pred_moving = extract_features(
         fixedim,
         movingim,
@@ -79,9 +149,8 @@ def convex_adam(
         moving_maxclip,
     )
 
-    # downscale feature intensities'
-    # otherwise network features and MIND features are in totally different
-    # scales
+    # Downscale feature intensities
+    # otherwise network features and MIND features are in different scales
     pred_fixed = pred_fixed * downscale_feat_scalar
     pred_moving = pred_moving * downscale_feat_scalar
 
@@ -97,7 +166,7 @@ def convex_adam(
         mask_fixed = None
         mask_moving = None
 
-    # MERGE WITH MIND FEATS:
+    # Merge network features with MIND features:
     mind_fixed, mind_moving, pred_fixed, pred_moving = merge_features(
         use_mask,
         pred_fixed,
@@ -280,7 +349,7 @@ if __name__=="__main__":
     )
     parser.add_argument(
         "--disp_hw", type=int, default=1,
-        help="Discretized search space width for MIND. Default 1."
+        help="Discretized search space half-width for MIND. Default 1."
     )
     parser.add_argument(
         '--selected_niter', type=int, default=80,
