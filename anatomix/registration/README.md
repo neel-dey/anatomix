@@ -34,14 +34,19 @@ Entire CLI:
 ```bash
 $ python run_convex_adam_with_network_feats.py -h
 
-usage: run_convex_adam_with_network_feats.py [-h] --fixed FIXED --moving MOVING --exp_name EXP_NAME --ckpt_path CKPT_PATH [--result_path RESULT_PATH] [--lambda_weight LAMBDA_WEIGHT] [--grid_sp GRID_SP]
-                                             [--disp_hw DISP_HW] [--selected_niter SELECTED_NITER] [--selected_smooth SELECTED_SMOOTH] [--grid_sp_adam GRID_SP_ADAM] [--no-ic] [--use_mask]
-                                             [--path_mask_fixed PATH_MASK_FIXED] [--path_mask_moving PATH_MASK_MOVING] [--fixed_minclip FIXED_MINCLIP] [--fixed_maxclip FIXED_MAXCLIP]
-                                             [--moving_minclip MOVING_MINCLIP] [--moving_maxclip MOVING_MAXCLIP]
+usage: run_convex_adam_with_network_feats.py [-h] --fixed FIXED --moving MOVING --exp_name EXP_NAME --ckpt_path CKPT_PATH
+                                             [--result_path RESULT_PATH] [--lambda_weight LAMBDA_WEIGHT]
+                                             [--grid_sp GRID_SP] [--disp_hw DISP_HW] [--selected_niter SELECTED_NITER]
+                                             [--selected_smooth SELECTED_SMOOTH] [--grid_sp_adam GRID_SP_ADAM] [--no-ic]
+                                             [--use_mask] [--path_mask_fixed PATH_MASK_FIXED]
+                                             [--path_mask_moving PATH_MASK_MOVING] [--fixed_minclip FIXED_MINCLIP]
+                                             [--fixed_maxclip FIXED_MAXCLIP] [--moving_minclip MOVING_MINCLIP]
+                                             [--moving_maxclip MOVING_MAXCLIP] [--warp_seg]
+                                             [--path_seg_fixed PATH_SEG_FIXED] [--path_seg_moving PATH_SEG_MOVING]
 
 Run ConvexAdam optimization with proposed network feats.
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
   --fixed FIXED         Path to the fixed image *.nii.gz file (required).
   --moving MOVING       Path to the moving image *.nii.gz file (required).
@@ -74,4 +79,9 @@ optional arguments:
                         If clipping, clip minimum intensity of moving img to this val.
   --moving_maxclip MOVING_MAXCLIP
                         If clipping, clip maximum intensity of moving img to this val.
+  --warp_seg            Warp the provided moving label map with estimated deformation.
+  --path_seg_fixed PATH_SEG_FIXED
+                        If warping labels, provide a *.nii.gz file for the fixed label.
+  --path_seg_moving PATH_SEG_MOVING
+                        If warping labels, provide a *.nii.gz file for the moving label
 ```

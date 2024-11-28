@@ -6,6 +6,7 @@ import argparse
 import nibabel as nib
 import os
 import random
+from sklearn.metrics import f1_score
 
 from convex_adam_utils import (
     extract_features,
@@ -42,6 +43,9 @@ def convex_adam(
     fixed_maxclip=None,
     moving_minclip=None,
     moving_maxclip=None,
+    warp_seg=False,
+    fixed_seg=None,
+    moving_seg=None,
     downscale_feat_scalar=0.1,
 ):
     
@@ -161,11 +165,53 @@ def convex_adam(
     disp0 = disp0.flip(4)
     
     moved = F.grid_sample(
-        torch.from_numpy(movingim[None, None, ...]).float(),
-        (grid1 + disp0).cpu().float(),
+        torch.from_numpy(movingim[None, None, ...]).float().cuda(),
+        (grid1 + disp0).float(),
         align_corners=False,
         mode='bilinear',
     )
+    
+    if warp_seg:
+        # Load segmentations:
+        fixseg = nib.load(fixed_seg).get_fdata()
+        movseg = nib.load(moving_seg).get_fdata()
+        
+        # Warp moving segmentation to fixed space:
+        moved_seg = F.grid_sample(
+            torch.from_numpy(movseg[None, None, ...]).float().cuda(), 
+            (grid1 + disp0).float(), 
+            align_corners=False, 
+            mode='nearest',
+        )
+        
+        # Save the warped label map:
+        nib.save(
+            nib.Nifti1Image(
+                moved_seg.squeeze().cpu().numpy(), 
+                affine_mtx,
+            ), 
+            os.path.join(
+                result_path,
+                'labels_moved_{}_g{}_hw{}_l{}_ga{}_ic{}_{}.nii.gz'.format(
+                    movsavename, grid_sp, disp_hw, lambda_weight,
+                    grid_sp_adam, ic, expname,
+                )
+            )
+        )
+        
+        # Compute and report Dice:
+        # TODO: should write this to a file when this script gets updated
+        # to also have batch mode
+        print(
+            'Dice: {}'.format(
+                f1_score(
+                    fixseg.flatten(),
+                    moved_seg.cpu().numpy().flatten(),
+                    average='macro',
+                    labels=np.unique(fixseg).astype(int).tolist()[1:],
+                )
+            )
+        )
     
     # Save output displacements:
     nib.save(
@@ -284,6 +330,19 @@ if __name__=="__main__":
         '--moving_maxclip', type=float, default=None,
         help="If clipping, clip maximum intensity of moving img to this val.",
     )
+    parser.add_argument(
+        '--warp_seg',
+        action='store_true',
+        help='Warp the provided moving label map with estimated deformation.'
+    )
+    parser.add_argument(
+        '--path_seg_fixed', type=str, default=None,
+        help="If warping labels, provide a *.nii.gz file for the fixed label.",
+    )
+    parser.add_argument(
+        '--path_seg_moving', type=str, default=None,
+        help="If warping labels, provide a *.nii.gz file for the moving label",
+    )
 
     
     args = parser.parse_args()
@@ -307,5 +366,8 @@ if __name__=="__main__":
         args.fixed_minclip,
         args.fixed_maxclip,
         args.moving_minclip,
-        args.moving_maxclip, # TODO: add any new args
+        args.moving_maxclip,
+        args.warp_seg,
+        args.path_seg_fixed,
+        args.path_seg_moving,
     )
