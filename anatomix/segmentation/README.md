@@ -1,5 +1,9 @@
 # Few-shot segmentation finetuning of anatomix weights
 
+Using only a few annotated volumes (3, 3, and 1 for the datasets in the screenshot below), 
+we can finetune the pretrained anatomix weights to significantly improve segmentation
+performance:
+
 ![Few-shot finetuning results](https://www.neeldey.com/files/qualitative-segmentation.png)
 
 This subfolder contains a demo training script to finetune our pretrained network on
