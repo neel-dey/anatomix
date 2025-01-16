@@ -35,27 +35,40 @@ sets in the `train_segmentation.py` scripts are used for model selection.
 
 ## Usage
 
-Once you have your data organized, you could start a finetuning run for `NCLASS`
--segmentation with 3 finetuning volumes with our pretrained weights as:
+Once you have your data organized, start a finetuning run for `NCLASSES`-segmentation 
+(e.g., if you have 3 organs and background, `NCLASSES=3`) with `NVOLS` annotated 
+finetuning volumes from `imagesTr` and `labelsTr` with our pretrained weights as:
 ```bash
-python train_segmentation --dataset ./dataset/ --n_classes NCLASSES --pretrained_ckpt ../../model-weights/anatomix.pth
+python train_segmentation.py 
+--dataset ./dataset/ \
+--n_classes NCLASSES \
+--train_amount NVOLS \
+--pretrained_ckpt ../../model-weights/anatomix.pth
 ```
 
 To train from scratch / random initialization instead:
 ```bash
-python train_segmentation --dataset ./dataset/ --n_classes NCLASSES --pretrained_ckpt scratch
+python train_segmentation.py \
+--dataset ./dataset/ \
+--n_classes NCLASSES \
+--train_amount NVOLS \
+--pretrained_ckpt scratch
 ```
 
-Full CLI:
+Logs and checkpoints are saved in `finetuning_runs/checkpoints/` and `finetuning_runs/runs/`, respectively.
+
+See full CLI below:
 ```
 $ python train_segmentation.py -h
-usage: train_segmentation.py [-h] [--dataset DATASET] [--n_epochs N_EPOCHS] [--n_classes N_CLASSES] [--val_interval VAL_INTERVAL] [--lr LR] [--crop_size CROP_SIZE] [--batch_size BATCH_SIZE]
-                             [--train_amount TRAIN_AMOUNT] [--train_repeats TRAIN_REPEATS] [--pretrained_ckpt PRETRAINED_CKPT] [--exp_name EXP_NAME]
+usage: train_segmentation.py [-h] [--dataset DATASET] [--n_epochs N_EPOCHS] [--n_iters_per_epoch N_ITERS_PER_EPOCH] [--n_classes N_CLASSES] [--val_interval VAL_INTERVAL] [--lr LR]
+                             [--crop_size CROP_SIZE] [--batch_size BATCH_SIZE] [--train_amount TRAIN_AMOUNT] [--pretrained_ckpt PRETRAINED_CKPT] [--exp_name EXP_NAME]
 
 optional arguments:
   -h, --help            show this help message and exit
   --dataset DATASET     Directory where image and label *.nii.gz files are stored.
-  --n_epochs N_EPOCHS   Number of epochs (75 training batches in this script)
+  --n_epochs N_EPOCHS   Number of epochs. An epoch is defined as n_iters_per_epoch training batches
+  --n_iters_per_epoch N_ITERS_PER_EPOCH
+                        Number of training batches per epoch
   --n_classes N_CLASSES
                         Number of classes to segment. Does not include background class
   --val_interval VAL_INTERVAL
@@ -67,10 +80,7 @@ optional arguments:
                         Batch size to train with
   --train_amount TRAIN_AMOUNT
                         No. of training samples to use for few-shot training
-  --train_repeats TRAIN_REPEATS
-                        TBD
   --pretrained_ckpt PRETRAINED_CKPT
                         Default points to model weights path. Set to 'scratch' for random initialization
-  --exp_name EXP_NAME
-                        Prefix to attach to training logs in folder and file names
+  --exp_name EXP_NAME   Prefix to attach to training logs in folder and file names
 ```

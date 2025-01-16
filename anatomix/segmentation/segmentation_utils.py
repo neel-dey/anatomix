@@ -32,13 +32,37 @@ warnings.filterwarnings("ignore")
 from network import Unet
 
 def load_model(pretrained_ckpt, n_classes, device):
+    """
+    Load and configure a U-Net model for semantic segmentation.
+    
+    This function creates a U-Net model and optionally loads pretrained weights.
+    It adds a final output layer for the specified number of segmentation classes.
+    
+    Parameters
+    ----------
+    pretrained_ckpt : str
+        Path to pretrained model checkpoint, or 'scratch' for random initialization
+    n_classes : int
+        Number of segmentation classes (excluding background)
+    device : torch.device
+        Device to load the model on ('cuda' or 'cpu')
+        
+    Returns
+    -------
+    new_model : torch.nn.Sequential
+        Configured model with pretrained weights (if specified) and output layer
+    """
+    # Initialize base U-Net model
     model = Unet(3, 1, 16, 4, ngf=16).to(device)
+    
     if pretrained_ckpt == 'scratch':
         print("Training from random initialization.")
         pass
     else:
         print("Transferring from proposed pretrained network.")
         model.load_state_dict(torch.load(pretrained_ckpt))
+        
+    # Add final classification layer
     fin_layer = UnetOutBlock(3, 16, n_classes + 1, False).to(device)
     new_model = torch.nn.Sequential(model, fin_layer)
     new_model.to(device)
@@ -50,10 +74,30 @@ def load_model(pretrained_ckpt, n_classes, device):
 # Misc. utilities
 
 def save_ckp(state, checkpoint_dir):
+    """
+    Save model checkpoint to disk.
+    
+    Parameters
+    ----------
+    state : dict
+        Model state dictionary to save
+    checkpoint_dir : str
+        Directory path to save checkpoint file
+    """
     torch.save(state, checkpoint_dir)
 
 
 def worker_init_fn(worker_id):
+    """
+    Initialize worker for data loading.
+    
+    Sets random seed for data augmentation transforms in worker processes.
+    
+    Parameters
+    ----------
+    worker_id : int
+        ID of the worker process
+    """
     worker_info = torch.utils.data.get_worker_info()
     try:
         worker_info.dataset.transform.set_random_state(
@@ -142,8 +186,36 @@ def get_val_transforms():
 # Dataset handling
 
 
-def data_handler(basedir, finetuning_amount=3, repeats=100, seed=12345):
-    # Training set:
+def data_handler(
+    basedir, finetuning_amount=3, iters_per_epoch=75, batch_size=3, seed=12345,
+):
+    """
+    Handle data loading and preparation for few-shot segmentation training.
+    
+    This function loads training and validation image/segmentation pairs from the
+    specified directory structure, randomly selects a subset for few-shot training,
+    and repeats the training data as needed to match the desired iterations per epoch.
+    
+    Parameters
+    ----------
+    basedir : str
+        Base directory containing imagesTr, labelsTr, imagesVal, and labelsVal folders
+    finetuning_amount : int, optional
+        Number of training image pairs to use for few-shot learning. Default is 3
+    iters_per_epoch : int, optional
+        Number of training iterations per epoch. Default is 75
+    batch_size : int, optional
+        Batch size for training. Default is 3
+    seed : int, optional
+        Random seed for reproducible data selection. Default is 12345
+        
+    Returns
+    -------
+    tuple
+        Lists of file paths: (training images, training segmentations,
+                             validation images, validation segmentations)
+    """
+    # Load all training image and segmentation paths
     trimages = sorted(
         glob(
             os.path.join(basedir, './imagesTr/*.nii.gz'),
@@ -154,23 +226,25 @@ def data_handler(basedir, finetuning_amount=3, repeats=100, seed=12345):
             os.path.join(basedir, './labelsTr/*.nii.gz'),
         )
     )
+    # Verify we have matching pairs of images and segmentations
     assert len(trimages) > 0
     assert len(trimages) == len(trsegs)
     
-    # For few-shot seg, we randomly select a `finetuning_amount` of images
+    # Randomly select subset of training data for few-shot learning
     trimages = np.random.RandomState(seed=seed).permutation(trimages).tolist()
     trsegs = np.random.RandomState(seed=seed).permutation(trsegs).tolist()
     trimages = trimages[:finetuning_amount]
     trsegs = trsegs[:finetuning_amount]
 
-    # TODO: make logic better
-    # Few-shot finetuning does not really have an idea of an "epoch", so we
-    # pick a number (75 training iterations) as an epoch. To do that with a
-    # batch size of 4 in all our finetuning experiments:
+    # Calculate repeats needed to achieve desired iterations per epoch
+    samples_per_epoch = iters_per_epoch * batch_size
+    repeats = max(1, samples_per_epoch // finetuning_amount)
+
+    # Repeat training data to match desired samples per epoch
     trimages = trimages * repeats
     trsegs = trsegs * repeats
 
-    # Get validation set niftis as normal:
+    # Load validation data paths
     vaimages = sorted(
         glob(
             os.path.join(basedir, './imagesVal/*.nii.gz'),

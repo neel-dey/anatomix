@@ -40,11 +40,11 @@ def main(opt):
     logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
     trimages, trsegs, vaimages, vasegs = data_handler(
-        opt.dataset, opt.train_amount, opt.train_repeats,
+        opt.dataset, opt.train_amount, opt.n_iters_per_epoch, opt.batch_size,
     )
 
-    print('Training: {} images {} segs'.format(len(trimages), len(trsegs)))
-    print('Validation: {} images {} segs'.format(len(vaimages), len(vasegs)))
+    print('Training cache: {} images {} segs'.format(len(trimages), len(trsegs)))
+    print('Validation set: {} images {} segs'.format(len(vaimages), len(vasegs)))
 
     train_files = [
         {"image": img, "label": seg} for img, seg in zip(trimages, trsegs)
@@ -100,10 +100,12 @@ def main(opt):
     loss_function = monai.losses.DiceCELoss(
         softmax=True, to_onehot_y=True, include_background=False,
     )
+    # Track Dice loss for validation
     valloss_function = monai.losses.DiceLoss(
         softmax=True, to_onehot_y=True, include_background=False,
     )
 
+    # Create optimizer and scheduler
     optimizer = torch.optim.Adam(
         new_model.parameters(), opt.lr, weight_decay=0
     )
@@ -260,7 +262,12 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         '--n_epochs', type=int, default=500,
-        help="Number of epochs (75 training batches in this script)",
+        help="Number of epochs. "
+        "An epoch is defined as n_iters_per_epoch training batches",
+    )
+    parser.add_argument(
+        '--n_iters_per_epoch', type=int, default=75,
+        help="Number of training batches per epoch",
     )
     parser.add_argument(
         '--n_classes', type=int, default=4,
@@ -287,20 +294,17 @@ if __name__ == "__main__":
         help="No. of training samples to use for few-shot training",
     )
     parser.add_argument(
-        '--train_repeats', type=int, default=100,
-        help="TBD",
-    )
-    parser.add_argument(
         '--pretrained_ckpt',
         type=str,
         default='../../model-weights/anatomix.pth',
-        help="Default points to model weights path. Set to 'scratch' for random initialization",
+        help="Default points to model weights path. "
+        "Set to 'scratch' for random initialization",
     )
     parser.add_argument(
         '--exp_name',
         type=str,
         default='demo',
-        help="",
+        help="Prefix to attach to training logs in folder and file names",
     )
 
     args = parser.parse_args()
