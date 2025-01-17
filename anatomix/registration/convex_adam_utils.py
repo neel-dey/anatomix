@@ -16,9 +16,20 @@ warnings.filterwarnings("ignore")
 from network import Unet
 
 
-# get network features
-
 def load_model(ckpt_path):
+    """
+    Load a pretrained U-Net model from a checkpoint file.
+    
+    Parameters
+    ----------
+    ckpt_path : str
+        Path to the model checkpoint file.
+        
+    Returns
+    -------
+    model : torch.nn.Module
+        Loaded U-Net model in frozen evaluation mode.
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = Unet(3, 1, 16, 4, ngf=16).to(device)
 
@@ -29,8 +40,22 @@ def load_model(ckpt_path):
     return model
 
 
-
 def diffusion_regularizer(disp_sample, lambda_weight):
+    """
+    Calculate diffusion regularization loss for a displacement field.
+    
+    Parameters
+    ----------
+    disp_sample : torch.Tensor
+        Displacement field tensor of shape [1, C, H, W, D].
+    lambda_weight : float
+        Weight factor for the regularization loss.
+        
+    Returns
+    -------
+    float
+        Weighted regularization loss value.
+    """
     loss = (
         ((disp_sample[0, :, 1:, :] - disp_sample[0, :, :-1, :]) ** 2).mean() +
         ((disp_sample[0, 1:, :, :] - disp_sample[0, :-1, :, :]) ** 2).mean() +
@@ -40,6 +65,23 @@ def diffusion_regularizer(disp_sample, lambda_weight):
 
 
 def apply_avg_pool3d(disp_hr, kernel_size, num_repeats):
+    """
+    Apply 3D average pooling multiple times to a displacement field.
+    
+    Parameters
+    ----------
+    disp_hr : torch.Tensor
+        High resolution displacement field.
+    kernel_size : int
+        Size of the pooling kernel.
+    num_repeats : int
+        Number of times to apply the pooling operation.
+        
+    Returns
+    -------
+    torch.Tensor
+        Pooled displacement field.
+    """
     padding = kernel_size // 2
     for _ in range(num_repeats):
         disp_hr = F.avg_pool3d(
@@ -52,6 +94,23 @@ def apply_avg_pool3d(disp_hr, kernel_size, num_repeats):
 
 
 def minmax(arr, minclip=None, maxclip=None):
+    """
+    Normalize array to [0,1] range with optional clipping.
+    
+    Parameters
+    ----------
+    arr : numpy.ndarray
+        Input array to normalize.
+    minclip : float, optional
+        Minimum value for clipping.
+    maxclip : float, optional
+        Maximum value for clipping.
+        
+    Returns
+    -------
+    numpy.ndarray
+        Normalized array in [0,1] range.
+    """
     if not (minclip is None) & (maxclip is None):
         arr = np.clip(arr, minclip, maxclip)
         
@@ -68,6 +127,31 @@ def extract_features(
     movminclip=None,
     movmaxclip=None,
 ):
+    """
+    Extract features from fixed and moving images using pretrained network.
+    
+    Parameters
+    ----------
+    img_fixed : numpy.ndarray
+        Fixed image.
+    img_moving : numpy.ndarray
+        Moving image.
+    model : torch.nn.Module
+        Neural network model for feature extraction.
+    fixminclip : float, optional
+        Minimum clip value for fixed image.
+    fixmaxclip : float, optional
+        Maximum clip value for fixed image.
+    movminclip : float, optional
+        Minimum clip value for moving image.
+    movmaxclip : float, optional
+        Maximum clip value for moving image.
+        
+    Returns
+    -------
+    tuple
+        (fixed_features, moving_features) extracted by the model.
+    """
     imfixed = minmax(img_fixed, fixminclip, fixmaxclip)
     imfixed = torch.from_numpy(imfixed)[None, None, ...].float().cuda()
     imfixed.requires_grad = False
@@ -98,12 +182,23 @@ def extract_features(
     
     return opfixed, opmoving
 
-
 # -----------------------------------------------------------------------------
 # JacDet utils
 
-
 def generate_grid(imgshape):
+    """
+    Generate a coordinate grid for an image volume.
+    
+    Parameters
+    ----------
+    imgshape : tuple
+        Shape of the image volume (H, W, D).
+        
+    Returns
+    -------
+    numpy.ndarray
+        Coordinate grid of shape (H, W, D, 3).
+    """
     x = np.arange(imgshape[0])
     y = np.arange(imgshape[1])
     z = np.arange(imgshape[2])
@@ -114,6 +209,21 @@ def generate_grid(imgshape):
 
 
 def JacobianDet(y_pred, sample_grid):
+    """
+    Calculate the Jacobian determinant of a deformation field.
+    
+    Parameters
+    ----------
+    y_pred : torch.Tensor
+        Predicted deformation field.
+    sample_grid : torch.Tensor
+        Reference coordinate grid.
+        
+    Returns
+    -------
+    torch.Tensor
+        Jacobian determinant of the deformation.
+    """
     J = y_pred + sample_grid
     dy = J[:, 1:, :-1, :-1, :] - J[:, :-1, :-1, :-1, :]
     dx = J[:, :-1, 1:, :-1, :] - J[:, :-1, :-1, :-1, :]
@@ -133,11 +243,21 @@ def JacobianDet(y_pred, sample_grid):
 
     return Jdet
 
-# -----------------------------------------------------------------------------
-# Original utils
-# TODO Mainly just removing functions I dont use and making PEP8 compliant
 
 def pdist_squared(x):
+    """
+    Compute pairwise squared Euclidean distances between points.
+    
+    Parameters
+    ----------
+    x : torch.Tensor
+        Input tensor of points.
+        
+    Returns
+    -------
+    torch.Tensor
+        Matrix of pairwise squared distances.
+    """
     xx = (x**2).sum(dim=1).unsqueeze(2)
     yy = xx.permute(0, 2, 1)
     dist = xx + yy - 2.0 * torch.bmm(x.permute(0, 2, 1), x)
@@ -146,9 +266,29 @@ def pdist_squared(x):
     return dist
 
 
+# -----------------------------------------------------------------------------
+# Original Convex Adam utils
+
+
 def MINDSSC(img, radius=2, dilation=2):
-    # see http://mpheinrich.de/pub/miccai2013_943_mheinrich.pdf for details on the MIND-SSC descriptor
+    """
+    See http://mpheinrich.de/pub/miccai2013_943_mheinrich.pdf for details 
+    on the MIND-SSC descriptor
     
+    Parameters
+    ----------
+    img : torch.Tensor
+        Input image tensor.
+    radius : int, optional
+        Radius for neighborhood sampling.
+    dilation : int, optional
+        Dilation factor for sampling pattern.
+        
+    Returns
+    -------
+    torch.Tensor
+        MIND-SSC descriptor tensor.
+    """
     # Kernel size
     kernel_size = radius * 2 + 1
     
@@ -228,9 +368,30 @@ def MINDSSC(img, radius=2, dilation=2):
     return mind
 
 
-#correlation layer: 
-# dense discretised displacements to compute SSD cost volume with box-filter
 def correlate(mind_fix, mind_mov, disp_hw, grid_sp, shape, ch=12):
+    """
+    Compute correlation between fixed and moving MIND descriptors.
+    
+    Parameters
+    ----------
+    mind_fix : torch.Tensor
+        MIND descriptor of fixed image.
+    mind_mov : torch.Tensor
+        MIND descriptor of moving image.
+    disp_hw : int
+        Half-width of displacement search range.
+    grid_sp : int
+        Grid spacing for displacement field.
+    shape : tuple
+        Shape of the input volume.
+    ch : int, optional
+        Number of MIND descriptor channels.
+        
+    Returns
+    -------
+    tuple
+        (ssd, ssd_argmin) Sum of squared differences and its argmin.
+    """
     H = int(shape[0])
     W = int(shape[1])
     D = int(shape[2])
@@ -292,8 +453,28 @@ def correlate(mind_fix, mind_mov, disp_hw, grid_sp, shape, ch=12):
     return ssd, ssd_argmin
 
 
-#solve two coupled convex optimisation problems for efficient global regularisation
 def coupled_convex(ssd, ssd_argmin, disp_mesh_t, grid_sp, shape):
+    """
+    Solve coupled convex optimization problems for global regularization.
+    
+    Parameters
+    ----------
+    ssd : torch.Tensor
+        Sum of squared differences tensor.
+    ssd_argmin : torch.Tensor
+        Argmin of the SSD tensor.
+    disp_mesh_t : torch.Tensor
+        Displacement mesh template.
+    grid_sp : int
+        Grid spacing.
+    shape : tuple
+        Shape of the input volume.
+        
+    Returns
+    -------
+    torch.Tensor
+        Optimized displacement field.
+    """
     H = int(shape[0])
     W = int(shape[1])
     D = int(shape[2])
@@ -333,9 +514,24 @@ def coupled_convex(ssd, ssd_argmin, disp_mesh_t, grid_sp, shape):
     return disp_soft
 
 
-
-#enforce inverse consistency of forward and backward transform
 def inverse_consistency(disp_field1s,disp_field2s,iterations=20):
+    """
+    Enforce inverse consistency between forward and backward transforms.
+    
+    Parameters
+    ----------
+    disp_field1s : torch.Tensor
+        Forward displacement field.
+    disp_field2s : torch.Tensor
+        Backward displacement field.
+    iterations : int, optional
+        Number of consistency iterations.
+        
+    Returns
+    -------
+    tuple
+        (disp_field1i, disp_field2i) Inverse consistent displacement fields.
+    """
     B, C, H, W, D = disp_field1s.size()
     
     # Make inverse consistent

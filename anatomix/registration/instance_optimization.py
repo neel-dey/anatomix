@@ -19,9 +19,36 @@ def merge_features(
     pred_moving,
     mask_fixed,
     mask_moving,
-    fixed_ch0,
-    moving_ch0,
+    fixed_img,
+    moving_img,
 ):
+    """
+    Merge MIND-SSC descriptors with network features.
+    Use masks if provided.
+    
+    Parameters
+    ----------
+    use_mask : bool
+        Whether to use masking for feature merging.
+    pred_fixed : torch.Tensor
+        Predicted features for fixed image.
+    pred_moving : torch.Tensor
+        Predicted features for moving image.
+    mask_fixed : torch.Tensor
+        Binary mask for fixed image.
+    mask_moving : torch.Tensor
+        Binary mask for moving image.
+    fixed_img : torch.Tensor
+        Fixed image.
+    moving_img : torch.Tensor
+        Moving image.
+        
+    Returns
+    -------
+    tuple
+        (mind_fixed, mind_moving, pred_fixed, pred_moving) 
+        pred_fixed and pred_moving contain merged MINDSSC and network features.
+    """
     if use_mask:
         H, W, D = pred_fixed.shape[-3:]
 
@@ -31,13 +58,18 @@ def merge_features(
             nn.AvgPool3d(3, stride=1)
         ).cuda()
         
+        # Compute masked MIND-SSC for fixed and moving images
+
+        # This is how the masks are used in the original repo for MINDSSC
+        # Instead of zeroing out the masked regions, they fill them in with
+        # distance transforms.
         mask = (avg3(mask_fixed.view(1, 1, H, W, D)) > 0.9).float()
         _, idx = edt(
             (mask[0, 0, ::2, ::2, ::2] == 0).squeeze().cpu().numpy(),
             return_indices=True,
         )
         fixed_r = F.interpolate(
-            (fixed_ch0[..., ::2, ::2, ::2].reshape(-1)[
+            (fixed_img[..., ::2, ::2, ::2].reshape(-1)[
                 idx[0] * D // 2 * W // 2 + idx[1] * D // 2 + idx[2]
             ]).unsqueeze(0).unsqueeze(0),
             scale_factor=2,
@@ -45,7 +77,7 @@ def merge_features(
         )
         fixed_r.view(-1)[
             mask.view(-1)!=0
-        ] = fixed_ch0.reshape(-1)[mask.view(-1)!=0]
+        ] = fixed_img.reshape(-1)[mask.view(-1)!=0]
 
         mask = (avg3(mask_moving.view(1, 1, H, W, D)) > 0.9).float()
         _, idx = edt(
@@ -53,7 +85,7 @@ def merge_features(
             return_indices=True
         )
         moving_r = F.interpolate(
-            (moving_ch0[..., ::2, ::2, ::2].reshape(-1)[
+            (moving_img[..., ::2, ::2, ::2].reshape(-1)[
                 idx[0] * D // 2 * W // 2 + idx[1] * D // 2 + idx[2]
             ]).unsqueeze(0).unsqueeze(0),
             scale_factor=2,
@@ -61,20 +93,26 @@ def merge_features(
         )
         moving_r.view(-1)[
             mask.view(-1)!=0
-        ] = moving_ch0.reshape(-1)[mask.view(-1)!=0]
+        ] = moving_img.reshape(-1)[mask.view(-1)!=0]
 
+        # Generate MIND-SSC descriptors
         mind_fixed = MINDSSC(fixed_r.cuda(), 1, 2)
         mind_moving = MINDSSC(moving_r.cuda(), 1, 2)
 
+        # Apply masks to network features
         pred_fixed = pred_fixed * mask_fixed[None, None, ...]
         pred_moving = pred_moving * mask_moving[None, None, ...]        
 
+        # Concatenate MINDSSC and network features
         pred_fixed = torch.concatenate([mind_fixed, pred_fixed], dim=1)
         pred_moving = torch.concatenate([mind_moving, pred_moving], dim=1)
 
     else:
-        mind_fixed = MINDSSC(fixed_ch0, 1, 2)
-        mind_moving = MINDSSC(moving_ch0, 1, 2)
+        # Generate MIND-SSC descriptors without masking
+        mind_fixed = MINDSSC(fixed_img, 1, 2)
+        mind_moving = MINDSSC(moving_img, 1, 2)
+
+        # Concatenate MINDSSC and network features
         pred_fixed = torch.concatenate([mind_fixed, pred_fixed], dim=1)
         pred_moving = torch.concatenate([mind_moving, pred_moving], dim=1)
     
@@ -90,9 +128,35 @@ def run_stage1_registration(
     n_ch,
     ic
 ):
+    """
+    Run first stage of registration using correlation volumes and 
+    convex optimization.
+    
+    Parameters
+    ----------
+    features_fix_smooth : torch.Tensor
+        Smoothed features from fixed image.
+    features_mov_smooth : torch.Tensor
+        Smoothed features from moving image.
+    disp_hw : int
+        Half-width of displacement search space.
+    grid_sp : int
+        Grid spacing for optimization.
+    sizes : tuple
+        Image dimensions (H, W, D).
+    n_ch : int
+        Number of feature channels.
+    ic : bool
+        Whether to enforce inverse consistency.
+        
+    Returns
+    -------
+    torch.Tensor
+        High resolution displacement field.
+    """
     H, W, D = sizes
 
-    # compute correlation volume with SSD
+    # Compute correlation volume with SSD
     ssd, ssd_argmin = correlate(
         features_fix_smooth,
         features_mov_smooth,
@@ -109,10 +173,10 @@ def run_stage1_registration(
         align_corners=True
     ).permute(0, 4, 1, 2, 3).reshape(3, -1, 1)
     
-    # perform coupled convex optimisation
+    # Perform coupled convex optimization
     disp_soft = coupled_convex(ssd, ssd_argmin, disp_mesh_t, grid_sp, (H,W,D))
     
-    # if "ic" flag is set: make inverse consistent
+    # Handle inverse consistency if requested
     if ic:
         scale = torch.tensor(
             [
@@ -122,6 +186,7 @@ def run_stage1_registration(
             ]
         ).view(1, 3, 1, 1, 1).cuda().half()/2
 
+        # Compute reverse correlation
         ssd_, ssd_argmin_ = correlate(
             features_mov_smooth,
             features_fix_smooth,
@@ -162,6 +227,22 @@ def create_warp(
     sizes,
     grid_sp_adam,
 ):
+    """
+    
+    Parameters
+    ----------
+    disp_hr : torch.Tensor
+        High resolution displacement field.
+    sizes : tuple
+        Image dimensions (H, W, D).
+    grid_sp_adam : int
+        Grid spacing for Adam optimization.
+        
+    Returns
+    -------
+    torch.nn.Sequential
+        A optimizable displacement grid.
+    """
     H, W, D = sizes
 
     # create optimisable displacement grid
@@ -191,11 +272,40 @@ def run_instance_opt(
     features_mov,
     grid_sp_adam,
     lambda_weight,
-    sizes,  # 3-tuple or list
+    sizes,
     selected_niter,
     selected_smooth,
     lr=1,
 ):
+    """
+    Run instance-specific optimization to refine registration.
+    
+    Parameters
+    ----------
+    disp_hr : torch.Tensor
+        Initial high resolution displacement field.
+    features_fix : torch.Tensor
+        Features from fixed image.
+    features_mov : torch.Tensor
+        Features from moving image.
+    grid_sp_adam : int
+        Grid spacing for Adam optimization.
+    lambda_weight : float
+        Weight for diffusion regularization.
+    sizes : tuple
+        Image dimensions (H, W, D).
+    selected_niter : int
+        Number of optimization iterations.
+    selected_smooth : int
+        Kernel size for final smoothing (3 or 5).
+    lr : float, optional
+        Learning rate for Adam optimizer. Default is 1.
+        
+    Returns
+    -------
+    torch.Tensor
+        Optimized high resolution displacement field.
+    """
     H, W, D = sizes
     
     with torch.no_grad():
@@ -206,6 +316,7 @@ def run_instance_opt(
             features_mov, grid_sp_adam, stride=grid_sp_adam,
         )
 
+    # Create warp tensor and optimizer
     net = create_warp(
         disp_hr, (H, W, D), grid_sp_adam,
     ).cuda()
@@ -214,7 +325,7 @@ def run_instance_opt(
         net.parameters(), lr=lr,
     ) #TODO: make hparam
 
-    # run Adam optimisation with diffusion reg. and B-spline smoothing
+    # Run Adam optimization with diffusion regularization and B-spline smoothing
     for _ in range(selected_niter):
         optimizer.zero_grad()
         
@@ -222,6 +333,7 @@ def run_instance_opt(
             net[0].weight, kernel_size=3, num_repeats=3,
         ).permute(0, 2, 3, 4, 1)
         
+        # Calculate regularization loss
         reg_loss = diffusion_regularizer(disp_sample, lambda_weight)
 
         scale = torch.tensor(
@@ -240,9 +352,11 @@ def run_instance_opt(
             align_corners=False,
         )
         
+        # Apply displacement to grid
         grid_disp = grid0.view(-1,3).cuda().float()
         grid_disp += ((disp_sample.view(-1, 3)) / scale).flip(1).float()
 
+        # Sample moving features using displaced grid
         patch_mov_sampled = F.grid_sample(
             patch_features_mov.float(),
             grid_disp.view(
@@ -256,18 +370,20 @@ def run_instance_opt(
             mode='bilinear',
         )
 
+        # Calculate feature matching cost
         sampled_cost = (
             patch_mov_sampled - patch_features_fix
         ).pow(2).mean(1) * 12
 
         loss = sampled_cost.mean()
 
+        # Combine losses and optimize
         total_loss = loss + reg_loss
         total_loss.backward()
 
         optimizer.step()
 
-
+    # Generate final displacement field
     fitted_grid = disp_sample.detach().permute(0, 4, 1, 2, 3)
     disp_hr = F.interpolate(
         fitted_grid * grid_sp_adam,
@@ -276,6 +392,7 @@ def run_instance_opt(
         align_corners=False,
     )
 
+    # Apply final smoothing if requested
     if selected_smooth in [3, 5]:
         disp_hr = apply_avg_pool3d(disp_hr, selected_smooth, num_repeats=3)
         
