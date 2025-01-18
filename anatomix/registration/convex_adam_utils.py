@@ -7,13 +7,7 @@ import time
 
 from monai.inferers import sliding_window_inference
 
-import sys
-sys.path.append('../model/')
-
-import warnings
-warnings.filterwarnings("ignore")
-
-from network import Unet
+from anatomix.model.network import Unet
 
 
 def load_model(ckpt_path):

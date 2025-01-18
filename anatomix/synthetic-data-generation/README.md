@@ -17,10 +17,17 @@ To run everything in one go: `./generate_training_data.sh`.
 
 ### Get templates:
 
-Download TotalSegmentator dataset: `wget https://zenodo.org/records/6802614/files/Totalsegmentator_dataset.zip`.
-Unzip to `/path/to/totalsegmentator/`.
+Download and unzip the TotalSegmentator dataset: 
 
-Preprocess TotalSegmentator for our purposes with `python step0_preprocess_totalsegmentator.py --totalsegmentator_path /path/to/totalsegmentator/Totalsegmentator_dataset/`.
+```bash
+wget https://zenodo.org/records/6802614/files/Totalsegmentator_dataset.zip
+unzip Totalsegmentator_dataset.zip
+```
+
+Preprocess TotalSegmentator for our purposes with 
+```bash
+python step0_preprocess_totalsegmentator.py --totalsegmentator_path /path/to/totalsegmentator/Totalsegmentator_dataset/
+```
 
 Full CLI:
 ```bash

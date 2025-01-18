@@ -20,16 +20,12 @@ from monai.transforms import (
     EnsureChannelFirstd,
 )
 
+from anatomix.model.network import Unet
+
+
 # -----------------------------------------------------------------------------
 # Loading pretrained model
 
-import sys
-sys.path.append('../model/')
-
-import warnings
-warnings.filterwarnings("ignore")
-
-from network import Unet
 
 def load_model(pretrained_ckpt, n_classes, device):
     """

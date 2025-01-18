@@ -63,9 +63,17 @@ All scripts will require the `anatomix` environment defined below to run.
 ```
 conda create -n anatomix python=3.9
 conda activate anatomix
-pip install numpy==1.24.1 nibabel scipy scikit-image nilearn h5py matplotlib
-pip3 install torch torchvision torchaudio
-pip install monai==1.3.2 tensorboard
+git clone https://github.com/neel-dey/anatomix.git
+cd anatomix
+pip install -e .
+```
+
+Or install the dependencies manually:
+```
+conda create -n anatomix python=3.9
+conda activate anatomix
+pip install numpy==1.24.1 nibabel scipy scikit-image nilearn h5py matplotlib torch tensorboard tqdm
+pip install monai==1.3.2
 ```
 
 ## Citation
