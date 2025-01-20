@@ -14,7 +14,26 @@ This respectively leads to:
 
 (all without any dataset or domain specific pretraining)
 
+## Load weights for inference / feature extraction / finetuning
+
 `anatomix` is just a pretrained UNet! Use it for whatever you like.
+
+```python
+import torch
+from anatomix.model.network import Unet
+
+model = Unet(
+    dimension=3,  # Only 3D supported for now
+    input_nc=1,  # number of input channels
+    output_nc=16,  # number of output channels
+    num_downs=4,  # number of downsampling layers
+    ngf=16,  # channel multiplier
+)
+model.load_state_dict(
+    torch.load("./model-weights/anatomix.pth"),
+    strict=True,
+)
+```
 
 **How?** It's weights were contrastively pretrained on wildly variable synthetic 
 volumes to learn approximate appearance invariance and pose 
