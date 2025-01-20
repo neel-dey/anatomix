@@ -8,11 +8,11 @@ import os
 import random
 from sklearn.metrics import f1_score
 
-from convex_adam_utils import (
+from anatomix.registration.convex_adam_utils import (
     extract_features,
     load_model,
 )
-from instance_optimization import (
+from anatomix.registration.instance_optimization import (
     run_stage1_registration,
     run_instance_opt,
     merge_features,

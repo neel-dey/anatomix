@@ -7,15 +7,13 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-
 import monai
 from monai.transforms import Compose, Activations, AsDiscrete
 from monai.data import list_data_collate
 from monai.inferers import sliding_window_inference
 from monai.visualize import plot_2d_or_3d_image
 
-
-from segmentation_utils import (
+from anatomix.segmentation.segmentation_utils import (
     load_model,
     save_ckp,
     worker_init_fn,

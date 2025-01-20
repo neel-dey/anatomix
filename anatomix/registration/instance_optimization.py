@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from scipy.ndimage import distance_transform_edt as edt
 
-from convex_adam_utils import (
+from anatomix.registration.convex_adam_utils import (
     apply_avg_pool3d,
     diffusion_regularizer,
     correlate,
