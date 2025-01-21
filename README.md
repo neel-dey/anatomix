@@ -1,7 +1,7 @@
 # anatomix
 
 ### [Paper](https://arxiv.org/abs/2411.02372) | [Training-free registration](https://github.com/neel-dey/anatomix/tree/main/anatomix/registration) | [Few-shot segmentation](https://github.com/neel-dey/anatomix/tree/main/anatomix/segmentation)
-### [Tutorial: 3D Feature extraction & Multimodal Registration](https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing)
+### [Colab Tutorial: 3D Feature extraction & Multimodal Registration](https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing)
 
 ![Highlight collage](https://www.neeldey.com/files/anatomix_github_highlight.png)
 
