@@ -1,6 +1,7 @@
 # anatomix
 
 ### [Paper](https://arxiv.org/abs/2411.02372) | [Training-free registration](https://github.com/neel-dey/anatomix/tree/main/anatomix/registration) | [Few-shot segmentation](https://github.com/neel-dey/anatomix/tree/main/anatomix/segmentation)
+### [Tutorial: 3D Feature extraction & Multimodal Registration](https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing)
 
 ![Highlight collage](https://www.neeldey.com/files/anatomix_github_highlight.png)
 
@@ -13,6 +14,12 @@ This respectively leads to:
 - SOTA 3D few-shot semantic segmentation
 
 (all without any dataset or domain specific pretraining)
+
+**How?** It's weights were contrastively pretrained on wildly variable synthetic
+volumes to learn approximate appearance invariance and pose
+equivariance for images with randomly sampled biomedical shape configurations with
+random intensities and artifacts.
+
 
 ## Load weights for inference / feature extraction / finetuning
 
@@ -35,10 +42,7 @@ model.load_state_dict(
 )
 ```
 
-**How?** It's weights were contrastively pretrained on wildly variable synthetic 
-volumes to learn approximate appearance invariance and pose 
-equivariance for images with randomly sampled biomedical shape configurations with
-random intensities and artifacts.
+See how to use it on real data in [this tutorial](https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing).
 
 ## Roadmap
 
@@ -46,7 +50,9 @@ The current repository is just an initial push. It will be refactored
 and some quality-of-life and core aspects will be pushed as well in the coming weeks.
 These include:
 - [ ] Contrastive pretraining code 
-- [ ] Jupyter/Colab tutorials
+- [x] Colab 3D feature extraction tutorial
+- [x] Colab 3D multimodality registration tutorial
+- [ ] Colab 3D few-shot finetuning tutorial
 - [ ] General-purpose registration interface with [ANTs](https://github.com/ANTsX/ANTs)
 - [ ] Dataset-specific modeling details for paper
 
