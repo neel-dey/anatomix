@@ -1,8 +1,13 @@
 # anatomix
 
+[![Paper
+shield](https://img.shields.io/badge/arXiv-2411.02372-red.svg)](https://arxiv.org/abs/2411.02372)
+[![License:
+MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 ### [Paper](https://arxiv.org/abs/2411.02372) | [Training-free registration](https://github.com/neel-dey/anatomix/tree/main/anatomix/registration) | [Few-shot segmentation](https://github.com/neel-dey/anatomix/tree/main/anatomix/segmentation)
-### [Colab Tutorial: 3D Feature Extraction & 3D Multimodal Registration](https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing)
-### [Colab Tutorial: 3D Few-shot Segmentation Finetuning with MONAI](https://colab.research.google.com/drive/1WBslSRLgAAMq6o5YFif1y0kaW9Ac15XK?usp=sharing)
+#### [Colab Tutorial: 3D Feature Extraction & 3D Multimodal Registration](https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing)
+#### [Colab Tutorial: Finetune anatomix for 3D Few-shot Segmentation with MONAI](https://colab.research.google.com/drive/1WBslSRLgAAMq6o5YFif1y0kaW9Ac15XK?usp=sharing)
 
 ![Highlight collage](https://www.neeldey.com/files/anatomix_github_highlight.png)
 
@@ -10,11 +15,9 @@
 - Its out-of-the-box features are invariant to most forms of nuisance imaging variation.
 - Its out-of-the-box weights are a good initialization for finetuning when given limited annotations.
 
-This respectively leads to:
+Without any dataset or domain specific pretraining, this respectively leads to:
 - SOTA 3D training-free multi-modality image registration
 - SOTA 3D few-shot semantic segmentation
-
-(all without any dataset or domain specific pretraining)
 
 **How?** It's weights were contrastively pretrained on wildly variable synthetic
 volumes to learn approximate appearance invariance and pose
@@ -45,17 +48,25 @@ model.load_state_dict(
 
 See how to use it on real data for feature extraction or registration in [this tutorial](https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing). Or if you want to finetune for your own task, check out [this tutorial](https://colab.research.google.com/drive/1WBslSRLgAAMq6o5YFif1y0kaW9Ac15XK?usp=sharing) instead.
 
-## Roadmap
+## Install dependencies:
 
-The current repository is just an initial push. It will be refactored 
-and some quality-of-life and core aspects will be pushed as well in the coming weeks.
-These include:
-- [ ] Contrastive pretraining code 
-- [x] Colab 3D feature extraction tutorial
-- [x] Colab 3D multimodality registration tutorial
-- [ ] Colab 3D few-shot finetuning tutorial
-- [ ] General-purpose registration interface with [ANTs](https://github.com/ANTsX/ANTs)
-- [ ] Dataset-specific modeling details for paper
+All scripts will require the `anatomix` environment defined below to run.
+
+```
+conda create -n anatomix python=3.9
+conda activate anatomix
+git clone https://github.com/neel-dey/anatomix.git
+cd anatomix
+pip install -e .
+```
+
+Or install the dependencies manually:
+```
+conda create -n anatomix python=3.9
+conda activate anatomix
+pip install numpy==1.24.1 nibabel scipy scikit-image nilearn h5py matplotlib torch tensorboard tqdm
+pip install monai==1.3.2
+```
 
 ## Folder organization
 
@@ -82,25 +93,18 @@ root-directory/
 └── README.md                               # This file
 ```
 
-## Install dependencies:
+## Roadmap
 
-All scripts will require the `anatomix` environment defined below to run.
+The current repository is just an initial push. It will be refactored 
+and some quality-of-life and core aspects will be pushed as well in the coming weeks.
+These include:
+- [ ] Contrastive pretraining code 
+- [x] Colab 3D feature extraction tutorial
+- [x] Colab 3D multimodality registration tutorial
+- [x] Colab 3D few-shot finetuning tutorial
+- [ ] General-purpose registration interface with [ANTs](https://github.com/ANTsX/ANTs)
+- [ ] Dataset-specific modeling details for paper
 
-```
-conda create -n anatomix python=3.9
-conda activate anatomix
-git clone https://github.com/neel-dey/anatomix.git
-cd anatomix
-pip install -e .
-```
-
-Or install the dependencies manually:
-```
-conda create -n anatomix python=3.9
-conda activate anatomix
-pip install numpy==1.24.1 nibabel scipy scikit-image nilearn h5py matplotlib torch tensorboard tqdm
-pip install monai==1.3.2
-```
 
 ## Citation
 
