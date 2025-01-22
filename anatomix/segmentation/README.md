@@ -1,5 +1,7 @@
 # Few-shot segmentation finetuning of anatomix weights
 
+### [Colab tutorial on how to prepare data and finetune for 3D segmentation with anatomix and MONAI](https://colab.research.google.com/drive/1WBslSRLgAAMq6o5YFif1y0kaW9Ac15XK?usp=sharing)
+
 Using only a few annotated volumes (3, 3, and 1 for the datasets in the screenshot below), 
 we can finetune the pretrained anatomix weights to significantly improve segmentation
 performance:

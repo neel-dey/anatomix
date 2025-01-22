@@ -1,7 +1,8 @@
 # anatomix
 
 ### [Paper](https://arxiv.org/abs/2411.02372) | [Training-free registration](https://github.com/neel-dey/anatomix/tree/main/anatomix/registration) | [Few-shot segmentation](https://github.com/neel-dey/anatomix/tree/main/anatomix/segmentation)
-### [Colab Tutorial: 3D Feature extraction & Multimodal Registration](https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing)
+### [Colab Tutorial: 3D Feature Extraction & 3D Multimodal Registration](https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing)
+### [Colab Tutorial: 3D Few-shot Segmentation Finetuning with MONAI](https://colab.research.google.com/drive/1WBslSRLgAAMq6o5YFif1y0kaW9Ac15XK?usp=sharing)
 
 ![Highlight collage](https://www.neeldey.com/files/anatomix_github_highlight.png)
 
@@ -42,7 +43,7 @@ model.load_state_dict(
 )
 ```
 
-See how to use it on real data in [this tutorial](https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing).
+See how to use it on real data for feature extraction or registration in [this tutorial](https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing). Or if you want to finetune for your own task, check out [this tutorial](https://colab.research.google.com/drive/1WBslSRLgAAMq6o5YFif1y0kaW9Ac15XK?usp=sharing) instead.
 
 ## Roadmap
 
