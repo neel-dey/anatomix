@@ -1,9 +1,10 @@
-# anatomix
-
 [![Paper
 shield](https://img.shields.io/badge/arXiv-2411.02372-red.svg)](https://arxiv.org/abs/2411.02372)
 [![License:
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+<a href="https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing"><img alt="Colab tutorial 1" src="https://colab.research.google.com/assets/colab-badge.svg"></a>
+
+# anatomix
 
 ### [Paper](https://arxiv.org/abs/2411.02372) | [Training-free registration](https://github.com/neel-dey/anatomix/tree/main/anatomix/registration) | [Few-shot segmentation](https://github.com/neel-dey/anatomix/tree/main/anatomix/segmentation)
 #### [Colab Tutorial: 3D Feature Extraction & 3D Multimodal Registration](https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing)
