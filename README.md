@@ -4,7 +4,7 @@ shield](https://img.shields.io/badge/arXiv-2411.02372-red.svg)](https://arxiv.or
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 <a href="https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing"><img alt="Colab tutorial 1" src="https://colab.research.google.com/assets/colab-badge.svg"></a>
 
-# anatomix
+# anatomix (ICLR'25)
 
 ### [Paper](https://arxiv.org/abs/2411.02372) | [Training-free registration](https://github.com/neel-dey/anatomix/tree/main/anatomix/registration) | [Few-shot segmentation](https://github.com/neel-dey/anatomix/tree/main/anatomix/segmentation)
 #### [Colab Tutorial: 3D Feature Extraction & 3D Multimodal Registration](https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing)
@@ -65,8 +65,7 @@ Or install the dependencies manually:
 ```
 conda create -n anatomix python=3.9
 conda activate anatomix
-pip install numpy==1.24.1 nibabel scipy scikit-image nilearn h5py matplotlib torch tensorboard tqdm
-pip install monai==1.3.2
+pip install numpy==1.24.1 nibabel scipy scikit-image nilearn h5py matplotlib torch==2.0.1 tensorboard tqdm monai==1.3.2
 ```
 
 ## Folder organization
