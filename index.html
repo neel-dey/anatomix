@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="description"
+        content="anatomix is a general-purpose stable feature extractor for 3D volumes, trained entirely on synthetic data.">
+  <meta name="keywords" content="anatomix, domain randomization, synthetic data, instance segmentation, image registration, multimodal, invariant features, representation learning">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>anatomix: Stable Representations For Any Biomedical Image</title>
+
+  <link href="https://fonts.googleapis.com/css?family=Google+Sans|Noto+Sans|Castoro"
+        rel="stylesheet">
+
+  <link rel="stylesheet" href="./static/css/bulma.min.css">
+  <link rel="stylesheet" href="./static/css/bulma-carousel.min.css">
+  <link rel="stylesheet" href="./static/css/bulma-slider.min.css">
+  <link rel="stylesheet" href="./static/css/fontawesome.all.min.css">
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
+  <link rel="stylesheet" href="./static/css/index.css">
+  <link rel="icon" href="./static/images/favicon.svg">
+
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <script defer src="./static/js/fontawesome.all.min.js"></script>
+  <script src="./static/js/bulma-carousel.min.js"></script>
+  <script src="./static/js/bulma-slider.min.js"></script>
+  <script src="./static/js/index.js"></script>
+</head>
+
+<body>
+
+
+<section class="hero">
+  <div class="jumbotron">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered">
+        <div class="column has-text-centered">
+          <h1 class="title is-1 publication-title"><span style="font-family: monospace; font-weight: 300;">anatomix</span></h1>
+          <h3 class="title is-2 publication-title">
+            <span style="font-weight: 500;">Learning General-Purpose Biomedical Volume Representations using Randomized Synthesis</span>
+          </h3>
+
+          <!-- Conference tags -->
+          <h3 class="title is-4 conference-title" style="margin-top: 1rem; color: #f68946;">ICLR 2025</h3>
+
+          <!-- 2x4 Author Grid -->
+          <div class="columns is-multiline is-centered" style="max-width: 960px; margin: auto;">
+            <div class="column is-one-quarter has-text-centered">
+              <a href="https://www.neeldey.com" class="has-text-weight-semibold is-size-5">Neel Dey</a>
+              <div>MIT CSAIL</div>
+            </div>
+            <div class="column is-one-quarter has-text-centered">
+              <a href="https://bbillot.github.io/" class="has-text-weight-semibold is-size-5">Benjamin Billot</a>
+              <div>MIT CSAIL</div>
+            </div>
+            <div class="column is-one-quarter has-text-centered">
+              <a href="https://halleewong.github.io/" class="has-text-weight-semibold is-size-5">Hallee E. Wong</a>
+              <div>MIT CSAIL</div>
+            </div>
+            <div class="column is-one-quarter has-text-centered">
+              <a href="https://clintonjwang.github.io/" class="has-text-weight-semibold is-size-5">Clinton J. Wang</a>
+              <div>MIT CSAIL</div>
+            </div>
+
+            <div class="column is-one-quarter has-text-centered">
+              <a href="https://www.mengweiren.com/" class="has-text-weight-semibold is-size-5">Mengwei Ren</a>
+              <div>New York University</div>
+            </div>
+            <div class="column is-one-quarter has-text-centered">
+              <a href="https://www.childrenshospital.org/research/researchers/patricia-ellen-grant" class="has-text-weight-semibold is-size-5">P. Ellen Grant</a>
+              <div>Boston Children's Hospital and Harvard Medical School</div>
+            </div>
+            <div class="column is-one-quarter has-text-centered">
+              <a href="http://www.mit.edu/~adalca/" class="has-text-weight-semibold is-size-5">Adrian V. Dalca</a>
+              <div>MIT CSAIL, MGH, and Harvard Medical School</div>
+            </div>
+            <div class="column is-one-quarter has-text-centered">
+              <a href="https://people.csail.mit.edu/polina/index.html" class="has-text-weight-semibold is-size-5">Polina Golland</a>
+              <div>MIT CSAIL</div>
+            </div>
+          </div>
+
+          <!-- Buttons -->
+          <div class="buttons is-centered mt-4">
+            <a href="https://arxiv.org/abs/2411.02372" class="button is-rounded is-dark">
+              <span class="icon"><i class="ai ai-arxiv"></i></span><span>Paper</span>
+            </a>
+            <a href="https://github.com/neel-dey/anatomix" class="button is-rounded is-dark">
+              <span class="icon"><i class="fab fa-github"></i></span><span>Code & weights</span>
+            </a>
+            <a href="https://openreview.net/forum?id=xOmC5LiVuN" class="button is-rounded is-dark">
+              <span class="icon"><i class="fa fa-book"></i></span><span>Reviews</span>
+            </a>
+            <a href="https://colab.research.google.com/drive/1WBslSRLgAAMq6o5YFif1y0kaW9Ac15XK?usp=sharing" class="button is-rounded is-dark">
+              <span class="icon"><i class="fa fa-book"></i></span><span>Few-shot Segmentation Tutorial</span>
+            </a>
+            <a href="https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing" class="button is-rounded is-dark">
+              <span class="icon"><i class="fa fa-book"></i></span><span>Feature Extraction and Registration Tutorial</span>
+            </a>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<br>
+
+<section class="hero teaser">
+  <div class="container is-max-desktop">
+    <div class="hero-body">
+      <video id="teaser" autoplay muted loop playsinline height="100%">
+        <source src="./static/videos/anatomix-highlight.mp4"
+                type="video/mp4">
+      </video>
+      <h2 class="subtitle has-text-centered">
+        <span style="font-family: monospace; font-weight: 300;">anatomix</span>
+         is a general-purpose stable feature extractor for 3D volumes, trained
+        entirely on synthetic data. It is
+        highly shape-biased and roughly invariant to nuisance imaging variation.
+        Given volumes from different modalities and poses (left), output 
+        <span style="font-family: monospace; font-weight: 300;">anatomix</span>
+         features (right) co-activate in similar manners.
+        
+      </h2>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container is-max-desktop">
+    <!-- TL;DR. -->
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-four-fifths">
+        <h2 class="title is-3">TL;DR</h2>
+        <div class="content is-flex is-justify-content-center">
+          <ul style="text-align: left;">
+            <li>Extract modality-agnostic 3D features for any biomedical imaging task.</li>
+            <li>A pretrained 3D UNet that can be efficiently finetuned on any biomedical task.</li>
+            <li>No need for any dataset-specific pretraining.</li>
+            <li>SOTA 3D multi-modality registration & few-shot segmentation</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <!--/ TL;DR -->
+  </div>
+</section>
+
+<section class="section">
+  <div class="container is-max-desktop">
+    <!-- Abstract. -->
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-four-fifths">
+        <h2 class="title is-3">Abstract</h2>
+        <div class="content has-text-justified">
+          <p>
+Current volumetric biomedical foundation models struggle to generalize as public 3D datasets are small and do not cover the broad diversity of medical procedures, conditions, anatomical regions, and imaging protocols. We address this by creating a representation learning method that instead anticipates strong domain shifts at training time itself. We first propose a data engine that synthesizes highly variable training samples that would enable generalization to new biomedical contexts. To then train a single 3D network for any voxel-level task, we develop a contrastive learning method that pretrains the network to be stable against nuisance imaging variation simulated by the data engine, a key inductive bias for generalization. This network's features can be used as robust representations of input images for downstream tasks and its weights provide a strong, dataset-agnostic initialization for finetuning on new datasets. As a result, we set new standards across both multimodality registration and few-shot segmentation, a first for any 3D biomedical vision model, all without (pre-)training on any existing dataset of real images.
+          </p>
+        </div>
+      </div>
+    </div>
+    <!--/ Abstract. -->
+</section>
+
+
+<!-- Include MathJax -->
+<script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+<script id="MathJax-script" async
+        src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+</script>
+
+
+
+<section class="section">
+  <div class="container is-max-desktop">
+    <!-- Registration. -->
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-full-width">
+<h2 class="title is-3">Results</h2>
+        <h2 class="title is-4">(R1) Register any medical image across modalities using <span style="font-family: monospace; font-weight: 300;">anatomix</span></h2>
+        <div class="content has-text-justified">
+          <video id="replay-video"
+                 controls
+                 autoplay
+                 loop
+                 muted
+                 preload
+                 playsinline
+                 width="100%">
+            <source src="./static/videos/registration-highlight.mp4"
+                    type="video/mp4">
+          </video>
+          <div class="content is-centered has-text-left mt-5">
+            <p>
+              Medical image registration is traditionally formulated as the optimization problem:
+            </p>
+            <p>
+              \[\mathcal{L}(\varphi) = d(I_{\text{input}}, I_{\text{target}} \circ \varphi) + \lambda \, \text{Reg}(\varphi)\]
+            </p>
+            <p>
+              where \(d(\cdot)\) is a similarity measure between images and \(\text{Reg}(\cdot)\) is a regularization term on the deformation field \(\varphi\)
+            </p>
+            <p>
+              However, in cross-modality registration tasks, images no longer have comparable intensities, making traditional similarity metrics like mean squared error inapplicable. To align images across modalities, we instead use modality-agnostic <span style="font-family: monospace;">anatomix</span> features. By aligning the extracted features instead of raw intensities, we simply reformulate the registration loss as:
+            </p>
+            <p>
+              \[\mathcal{L}(\varphi) = d(F(I_{\text{input}}), F(I_{\text{target}}) \circ \varphi) + \lambda \, \text{Reg}(\varphi)\]
+            </p>
+            <p>
+              where \(F(\cdot)\) is the <span style="font-family: monospace;">anatomix</span> feature extractor. One can use any existing registration solver (like ANTs) with any previous similarity measure.
+            </p>
+            <p>
+              Using any off-the-shelf solver, this approach yields SOTA unsupervised 3D multimodal image registration across multiple datasets, as below:
+            </p>
+          </div>
+          <!-- Quantitative Results Figure -->
+          <div class="content has-text-centered mt-6">
+            <figure>
+              <img src="./static/images/registration-quantitative.png" alt="Quantitative registration results" style="max-width: 100%;">
+              <figcaption class="has-text-grey mt-2 has-text-left">
+                (a) Dice boxplots for each method for Learn2Reg-AbdomenMRCT (left group) and MM-WHS (right group), with corresponding medians reported on top of each box and the mean percentages of voxels with folds produced by each method reported at the bottom; (b) Using <span style="font-family: monospace;">anatomix</span> features leads to consistent registration improvements at the subject-level.
+              </figcaption>
+            </figure>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!--/ Registration. -->
+
+  <div class="container is-max-desktop">
+    <!-- Segmentation. -->
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-full-width">
+        <h2 class="title is-4">(R2) Efficiently finetune <span style="font-family: monospace; font-weight: 300;">anatomix</span> on just 1&mdash;3 labeled volumes</h2>
+        <div class="content has-text-justified">
+          <!-- Quanlitative Results Figure -->
+          <div class="content has-text-centered mt-6">
+            <figure>
+              <img src="./static/images/qualitative-segmentation.png" alt="Qualitative segmentation results" style="max-width: 100%;">
+              <figcaption class="has-text-grey mt-2 has-text-left">
+                <b>Few-shot 3D segmentation qualitative results</b>. All methods (<b>columns 2--7</b>) were fine-tuned on 3, 3, and 1 multi-label annotated volume(s) for each respective dataset (<b>rows 1 &mdash; 3</b>). 
+              </figcaption>
+            </figure>
+          </div>
+          <div class="content is-centered has-text-left mt-5">
+            <p>
+              Self-supervised pretraining in medical imaging is in a weird place. You collect 100s&mdash;1000s of volumes, annotate a few of them, and spend months to a year developing a pretraining strategy for your data to get a 2&mdash;10% boost. You could have just spent that time annotating more data for better results (and many projects do not have vast unlabeled pools, either).
+            </p>
+            <p>
+              However, through extensive pretraining on diverse synthetic data, <span style="font-family: monospace;">anatomix</span> is a pretrained U-Net for any biomedical dataset. You can finetune its weights efficiently on just a few annotated volumes from any new domain.
+            </p>
+            <p>
+              W.r.t. existing 3D foundation models, an <span style="font-family: monospace;">anatomix</span> pretrained U-Net is a consistently strong initialization for arbitrarily chosen datasets, both qualitatively (top) and quantitatively (bottom).
+            </p>
+          <!-- Quantitative Results Figure -->
+          <div class="content has-text-centered mt-6">
+            <figure>
+              <img src="./static/images/segmentation-quantitative.png" alt="Quantitative segmentation results" style="max-width: 100%;">
+              <figcaption class="has-text-grey mt-2 has-text-left">
+                Few-shot 3D segmentation Dice means and their bootstrapped std. deviations. Bolding and underlining represent the best and second-best Dice, respectively. 
+              </figcaption>
+            </figure>
+          </div>
+          <div class="content is-centered has-text-left mt-5">
+          </div>
+        </div>
+      </div>
+    </div>
+    <!--/ Segmentation. -->
+</section>
+
+<section class="section">
+  <div class="container is-max-desktop">
+    <!-- Registration. -->
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-full-width">
+        <h2 class="title is-3">Methods</h2>
+        <div class="content is-flex is-justify-content-center">
+          <ul style="text-align: left;">
+            <li>Existing representation learning methods for medical images fail to generalize to new domains.</li>
+            <li>We propose a new approach that instead <i>anticipate</i> domain shifts at training time and exploits them to pretrain a stable feature extractor.</li>
+            <li>To enable this, we develop a data engine synthesizes highly variable training samples, intentionally detached from any existing static biomedical context.</li>
+            <li>We then contrastively pretrain a single network on samples from this data engine to learn invariance to nuisance imaging variation across arbitrary domains.</li>
+          </ul>
+        </div> <br>
+        <h2 class="title is-4">(M1) A synthetic data engine for wildly variable but useful data</h2>
+          <!-- Quantitative Results Figure -->
+          <div class="content has-text-centered mt-6">
+            <figure>
+              <img src="./static/images/data-collage.png" alt="Samples from data engine" style="max-width: 100%;">
+            </figure>
+          </div>
+          <div class="content is-centered has-text-left mt-5">
+            <p>
+              Annotated 3D medical image datasets are scarce. While GANs or DDPMs can be used to synthesize new training samples, but are definitionally limited to reproducing their training distribution and cannot extrapolate to new domains. We instead generate samples are <b>not intended to be necessarily realistic</b>, but rather to serve as diverse and useful training data for learning general tasks in arbitrary biomedical contexts.
+            </p>
+            <p>
+              Our engine begins by generating spatial 3D ensembles of biomedical shape templates sampled randomly from a whole-body segmentation dataset. We then use a stochastic appearance model to synthesize intensity volumes from the layouts, as illustrated below:
+            </p>
+          </div>
+        <div class="content has-text-justified">
+          <video id="replay-video"
+                 controls
+                 autoplay
+                 loop
+                 muted
+                 preload
+                 playsinline
+                 width="100%">
+            <source src="./static/videos/step1-datageneration.mp4"
+                    type="video/mp4">
+          </video>
+        </div>
+      </div>
+    </div>
+  </div> <!-- Close first container -->
+  <br><br>
+
+  <div class="container is-max-desktop">
+    <!-- Registration. -->
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-full-width">
+        <h2 class="title is-4">(M2) Large-scale contrastive pretraining</h2>
+          <div class="content is-centered has-text-left mt-5">
+            <p>
+              It is not entirely clear how we should train on these weird images. A semantic segmentation loss won't work because there's no spatial or semantic structure in the labels across the dataset. A denoising loss won't take advantage of the semantic supervision we could use as we have the label maps already.  
+            </p>
+            <p>
+              Instead, we exploit our control over the synthetic data. By generating <i>paired</i> volumes that share spatial layouts but differ in appearance, we can pretrain a U-Net using a label-supervised patch contrastive loss. This encourages features from patches within the same label to be similar regardless of appearance, and distinct from features of other labels.
+            </p>
+          </div>
+        <div class="content has-text-justified">
+          <video id="replay-video"
+                 controls
+                 autoplay
+                 loop
+                 muted
+                 preload
+                 playsinline
+                 width="100%">
+            <source src="./static/videos/step2-pretrainingidea.mp4"
+                    type="video/mp4">
+          </video>
+        </div>
+          <div class="content is-centered has-text-left mt-5">
+            <p>
+              More concretely, our training procedure is shown below. We first sample a synthetic label map, from which we sample two intensity volumes. Each is then processed by a shared U-Net and we sample random spatial indices at each iteration to compute the contrastive loss. We apply this training loss to several multi-scale decoder layers:
+            </p>
+          </div>
+        <div class="content has-text-justified">
+          <video id="replay-video"
+                 controls
+                 autoplay
+                 loop
+                 muted
+                 preload
+                 playsinline
+                 width="100%">
+            <source src="./static/videos/step3-lossmechanism.mp4"
+                    type="video/mp4">
+          </video>
+        </div>
+      </div>
+    </div>
+  </div> <!-- Close second container -->
+</section>
+
+
+
+<section class="section" id="BibTeX">
+  <div class="container is-max-desktop content">
+    <h2 class="title">BibTeX</h2>
+    <pre><code>@inproceedings{
+dey2025learning,
+title={Learning General-purpose Biomedical Volume Representations using Randomized Synthesis},
+author={Neel Dey and Benjamin Billot and Hallee E. Wong and Clinton Wang and Mengwei Ren and Ellen Grant and Adrian V Dalca and Polina Golland},
+booktitle={The Thirteenth International Conference on Learning Representations},
+year={2025},
+url={https://openreview.net/forum?id=xOmC5LiVuN}
+}</code></pre>
+  </div>
+</section>
+
+
+<footer class="footer">
+  <div class="container">
+    <div class="columns is-centered">
+      <div class="column is-8">
+        <div class="content">
+          <p>
+            All website source code credits go to the <a href="https://github.com/nerfies/nerfies.github.io">Nerfies template</a>.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
