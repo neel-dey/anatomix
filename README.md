@@ -6,7 +6,7 @@ MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 # anatomix (ICLR'25)
 
-### [Paper](https://arxiv.org/abs/2411.02372) | [Training-free registration](https://github.com/neel-dey/anatomix/tree/main/anatomix/registration) | [Few-shot segmentation](https://github.com/neel-dey/anatomix/tree/main/anatomix/segmentation)
+### [Project page](http://www.neeldey.com/anatomix/) | [Paper](https://arxiv.org/abs/2411.02372) | [Training-free registration](https://github.com/neel-dey/anatomix/tree/main/anatomix/registration) | [Few-shot segmentation](https://github.com/neel-dey/anatomix/tree/main/anatomix/segmentation)
 #### [Colab Tutorial: 3D Feature Extraction & 3D Multimodal Registration](https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing)
 #### [Colab Tutorial: Finetune anatomix for 3D Few-shot Segmentation with MONAI](https://colab.research.google.com/drive/1WBslSRLgAAMq6o5YFif1y0kaW9Ac15XK?usp=sharing)
 
@@ -48,6 +48,8 @@ model.load_state_dict(
 ```
 
 See how to use it on real data for feature extraction or registration in [this tutorial](https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing). Or if you want to finetune for your own task, check out [this tutorial](https://colab.research.google.com/drive/1WBslSRLgAAMq6o5YFif1y0kaW9Ac15XK?usp=sharing) instead.
+
+(If your task involves brains, you might benefit by using the `anatomix+brains.pth` weights instead, where we synthesize training volumes using both our synthetic label ensembles and real brain labels.)
 
 ## Install dependencies:
 
