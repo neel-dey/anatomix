@@ -1,3 +1,4 @@
+import functools
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,6 +11,7 @@ from monai.inferers import sliding_window_inference
 from anatomix.model.network import Unet
 
 
+@functools.lru_cache(1)
 def load_model(ckpt_path):
     """
     Load a pretrained U-Net model from a checkpoint file.
