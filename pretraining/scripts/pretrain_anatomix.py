@@ -66,7 +66,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataroot",
         type=str,
-        default="/autofs/cluster/dalcalab2/users/nd480/reimpl-amix/anatomix/anatomix/synthetic-data-generation/h5_w_segs/",
+        default="../../synthetic-data-generation/h5_w_segs/",
         help="path to images",
     )
     parser.add_argument(

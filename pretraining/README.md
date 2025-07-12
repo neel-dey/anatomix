@@ -1,6 +1,6 @@
 # Pretrain anatomix
 
-![Pretraining overview](https://www.neeldey.com/anatomix/static/videos/step3-lossmechanism.mp4)
+https://www.neeldey.com/anatomix/static/videos/step3-lossmechanism.mp4
 
 This folder contains the code and scripts necessary to implement the supervised contrastive loss using large-scale paired synthetic 3D biomedical volumes with a shared segmentation map. The goal of this pretraining is to learn general-purpose, robust 3D feature representations that are stable against nuisance imaging variations.
 
