@@ -3,3 +3,4 @@ unzip Totalsegmentator_dataset.zip
 python step0_preprocess_totalsegmentator.py
 python step1_generate_labels.py
 python step2_generate_views.py
+python step3_generate_h5_w_segs.py

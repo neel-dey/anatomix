@@ -42,12 +42,12 @@ optional arguments:
                         Maximum number of worker processes to use (default: None, corresponding to all cores)
 ```
 
-### Generate ten example 3D label ensembles:
+### Generate 100 example 3D label ensembles:
 
-This will generate ten example 3D label ensembles using the downloaded TotalSegmentator labels.
+This will generate 100 example 3D label ensembles using the downloaded TotalSegmentator labels.
 
 ```bash
-python step1_generate_labels.py --n_ensembles 10 --templatedir /path/to/totalsegmentator/Totalsegmentator_dataset/
+python step1_generate_labels.py --n_ensembles 100 --templatedir /path/to/totalsegmentator/Totalsegmentator_dataset/
 ```
 
 Outputs will be saved in `./label_ensembles/` by default.
@@ -77,13 +77,13 @@ optional arguments:
                         Maximum number of workers for parallel processing (default: None, corresponding to all cores)
 ```
 
-### Generate ten example 3D synthetic volume pairs of contrastive views:
+### Generate 100 example 3D synthetic volume pairs of contrastive views:
 
-This script will use the ten example label ensembles generated above to generate 
+This script will use the 100 example label ensembles generated above to generate 
 paired volumes corresponding to two contrastive views:
 
 ```bash
-python step2_generate_views.py --end_idx 10
+python step2_generate_views.py --end_idx 100
 ```
 
 Output views will be saved in `./synthesized_views/` by default.
@@ -103,4 +103,39 @@ optional arguments:
   --max_workers MAX_WORKERS
                         Maximum number of worker processes to use
 
+```
+
+
+### (Optional) Create HDF5 files for training and validation:
+
+The codebase in `../pretraining/` requires the generated niftis to be written 
+into a single HDF5 file containing the paired contrastive views and segmentation
+for each entry.
+
+To generate H5s for what you've generated so far in this README, using 80 volumes
+for training and 20 for validation, run:
+```bash
+python step3_generate_h5_w_segs.py --val_count 20
+```
+
+HDF5 files will be saved in `./h5_w_segs/` by default.
+
+```bash
+$ python step3_generate_h5_w_segs.py --help
+usage: step3_generate_h5_w_segs.py [-h] [--view1_dir VIEW1_DIR] [--view2_dir VIEW2_DIR] [--seg_dir SEG_DIR] [--out_dir OUT_DIR] [--val_count VAL_COUNT] [--print_every PRINT_EVERY]
+
+Generate HDF5 files with segmentations from synthesized NIfTI views.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --view1_dir VIEW1_DIR
+                        Path to directory containing view1 NIfTI files
+  --view2_dir VIEW2_DIR
+                        Path to directory containing view2 NIfTI files
+  --seg_dir SEG_DIR     Path to directory containing segmentation NIfTI files
+  --out_dir OUT_DIR     Output directory for HDF5 files
+  --val_count VAL_COUNT
+                        Number of validation samples (from the end)
+  --print_every PRINT_EVERY
+                        Print progress every print_every samples
 ```
