@@ -188,9 +188,10 @@ def get_actvn_layer(activation='relu'):
         assert 0, "Unsupported activation: {}".format(activation)
     return Activation
 
-################
-# Network
-################
+
+# -------------------------------
+# Base network that gets pretrained
+# -------------------------------
 class Unet(nn.Module):
     """
     U-Net architecture for image-to-image translation.
@@ -240,10 +241,21 @@ class Unet(nn.Module):
     """
 
     def __init__(
-        self, dimension, input_nc, output_nc, num_downs, ngf=24, norm='batch',
-        final_act='none', activation='relu', pad_type='reflect', 
-        doubleconv=True, residual_connection=False, 
-        pooling='Max', interp='nearest', use_skip_connection=True,
+        self,
+        dimension,
+        input_nc,
+        output_nc,
+        num_downs,
+        ngf=24,
+        norm="batch",
+        final_act="none",
+        activation="relu",
+        pad_type="reflect",
+        doubleconv=True,
+        residual_connection=False,
+        pooling="Max",
+        interp="nearest",
+        use_skip_connection=True,
     ):
         """
         Initialize the U-Net model by constructing the architecture from the
@@ -433,7 +445,62 @@ class Unet(nn.Module):
         self.model = nn.Sequential(*model)
 
     def forward(self, input, layers=[], encode_only=False, verbose=False):
-        if len(layers) == 0:
+        if len(layers) > 0:
+            feat = input
+            feats = []
+            enc_feats = []
+            feat_tmp = dict()
+            for layer_id, layer in enumerate(self.model):
+                feat = layer(feat)
+                # print(layer_id, layer)
+
+                if verbose:
+                    print(layer_id, layer.__class__.__name__, feat.size())
+
+                if self.residual_connection and layer_id in self.res_source:
+                    feat_tmp = feat
+                    if verbose:
+                        print("Record skip connection input from %d" % layer_id)
+
+                if self.residual_connection and layer_id in self.res_dest:
+                    assert feat_tmp.size() == feat.size()
+                    feat = feat + 0.1 * feat_tmp
+                    if verbose:
+                        print("Add skip connection input for %d" % layer_id)
+
+                if self.use_skip_connection:  # use encoder/decoder concat
+                    if layer_id in self.encoder_idx:
+                        enc_feats.append(feat)
+                    if layer_id in self.decoder_idx:
+                        feat = torch.cat((enc_feats.pop(), feat), dim=1)
+
+                if layer_id in layers:
+                    if verbose:
+                        print(
+                            "%d: adding the output of %s %d"
+                            % (
+                                layer_id,
+                                layer.__class__.__name__,
+                                feat.size(1),
+                            ),
+                            feat.size(),
+                        )
+                    feats.append(feat)
+                else:
+                    if verbose:
+                        print(
+                            "%d: skipping %s"
+                            % (layer_id, layer.__class__.__name__),
+                            feat.size(),
+                        )
+                    pass
+                if layer_id == layers[-1] and encode_only:
+                    if verbose:
+                        print("encoder only return features")
+                    return feats  # return intermediate features alone; stop in the last layers
+
+            return feat, feats  # return both output and intermediate features
+        else:
             """Standard forward"""
             enc_feats = []
             feat = input
@@ -452,5 +519,3 @@ class Unet(nn.Module):
                     if layer_id in self.encoder_idx:
                         enc_feats.append(feat)
             return feat
-        else:
-            raise NotImplementedError
