@@ -67,7 +67,7 @@ Or install the dependencies manually:
 ```
 conda create -n anatomix python=3.9
 conda activate anatomix
-pip install numpy==1.24.1 nibabel scipy scikit-image nilearn h5py matplotlib torch==2.0.1 tensorboard tqdm monai==1.3.2
+pip install numpy==1.24.1 nibabel scipy scikit-image nilearn h5py matplotlib torch==2.0.1 tensorboard tqdm monai==1.3.2 torchio SimpleITK
 ```
 
 ## Folder organization
@@ -82,11 +82,13 @@ Each subfolder (described below) has its own README to detail its use.
 ```bash
 root-directory/
 │
-├── model-weights/                          # Pre-trained model weights
+├── model-weights/                          # Pretrained model weights
+│
+├── pretraining/                            # Pretraining code and scripts 
+│
+├── synthetic-data-generation/              # Scripts to generate synthetic training data
 │
 ├── anatomix/model/                         # Model definition and architecture
-│
-├── anatomix/synthetic-data-generation/     # Scripts to generate synthetic training data
 │
 ├── anatomix/registration/                  # Scripts for registration using the pretrained model
 │
@@ -100,11 +102,11 @@ root-directory/
 The current repository is just an initial push. It will be refactored 
 and some quality-of-life and core aspects will be pushed as well in the coming weeks.
 These include:
-- [ ] Contrastive pretraining code 
+- [x] Contrastive pretraining code 
 - [x] Colab 3D feature extraction tutorial
 - [x] Colab 3D multimodality registration tutorial
 - [x] Colab 3D few-shot finetuning tutorial
-- [ ] General-purpose registration interface with [ANTs](https://github.com/ANTsX/ANTs)
+- [ ] General-purpose registration interface with [FireANTs](https://github.com/rohitrango/FireANTs)
 - [ ] Dataset-specific modeling details for paper
 
 
@@ -129,6 +131,3 @@ If you find our work useful, please consider citing:
 Portions of this repository have been taken from the [Contrastive Unpaired Translation](https://github.com/taesungp/contrastive-unpaired-translation) 
 and [ConvexAdam](https://github.com/multimodallearning/convexAdam) repositories and modified. Thanks!
 
-## License
-
-We use the standard MIT license.
