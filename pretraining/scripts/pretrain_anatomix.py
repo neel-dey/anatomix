@@ -156,9 +156,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num_threads",
         type=int,
-        default=8,
+        default=0,
         help="number of threads for loading data",
-    )
+        )  # TODO: RAM memory leak if >0, investigate dataset class for fix
     parser.add_argument(
         "--lr",
         type=float,
