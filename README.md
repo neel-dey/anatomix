@@ -56,7 +56,7 @@ See how to use it on real data for feature extraction or registration in [this t
 All scripts will require the `anatomix` environment defined below to run.
 
 ```
-conda create -n anatomix python=3.9
+conda create -n anatomix python=3.11
 conda activate anatomix
 git clone https://github.com/neel-dey/anatomix.git
 cd anatomix
@@ -65,9 +65,9 @@ pip install -e .
 
 Or install the dependencies manually:
 ```
-conda create -n anatomix python=3.9
+conda create -n anatomix python=3.11
 conda activate anatomix
-pip install numpy==1.24.1 nibabel scipy scikit-image nilearn h5py matplotlib torch==2.0.1 tensorboard tqdm monai==1.3.2 torchio SimpleITK
+pip install numpy nibabel scipy scikit-image nilearn h5py matplotlib torch==2.8.0 tensorboard tqdm monai torchio SimpleITK
 ```
 
 ## Folder organization
