@@ -25,6 +25,7 @@ volumes to learn approximate appearance invariance and pose
 equivariance for images with randomly sampled biomedical shape configurations with
 random intensities and artifacts.
 
+> Note: This repo was recently bumped up to PyTorch 2.8.0 and Python 3.11. If you find any bugs or changes in performance, please open an issue.
 
 ## Load weights for inference / feature extraction / finetuning
 
