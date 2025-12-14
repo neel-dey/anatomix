@@ -3,6 +3,7 @@ import os
 import numpy as np
 from monai.networks.blocks import UnetOutBlock
 from glob import glob
+from natsort import natsorted
 
 from monai.transforms import (
     ScaleIntensityd,
@@ -212,12 +213,12 @@ def data_handler(
                              validation images, validation segmentations)
     """
     # Load all training image and segmentation paths
-    trimages = sorted(
+    trimages = natsorted(
         glob(
             os.path.join(basedir, './imagesTr/*.nii.gz'),
         )
     )
-    trsegs = sorted(
+    trsegs = natsorted(
         glob(
             os.path.join(basedir, './labelsTr/*.nii.gz'),
         )
@@ -241,12 +242,12 @@ def data_handler(
     trsegs = trsegs * repeats
 
     # Load validation data paths
-    vaimages = sorted(
+    vaimages = natsorted(
         glob(
             os.path.join(basedir, './imagesVal/*.nii.gz'),
         )
     )
-    vasegs = sorted(
+    vasegs = natsorted(
         glob(
             os.path.join(basedir, './labelsVal/*.nii.gz'),
         )

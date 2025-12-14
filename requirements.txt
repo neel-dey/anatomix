@@ -11,3 +11,4 @@ torch==2.8.0
 monai
 tensorboard
 tqdm
+natsort

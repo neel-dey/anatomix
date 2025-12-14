@@ -68,7 +68,7 @@ Or install the dependencies manually:
 ```
 conda create -n anatomix python=3.11
 conda activate anatomix
-pip install numpy nibabel scipy scikit-image nilearn h5py matplotlib torch==2.8.0 tensorboard tqdm monai torchio SimpleITK
+pip install numpy nibabel scipy scikit-image nilearn h5py matplotlib torch==2.8.0 tensorboard tqdm monai torchio SimpleITK natsort
 ```
 
 ## Folder organization
