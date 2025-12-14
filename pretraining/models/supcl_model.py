@@ -365,7 +365,7 @@ class SupCLModel(BaseModel):
                 self.netF = networks.define_F(
                     opt.input_nc,
                     opt.netF,
-                    opt.normG,
+                    opt.normF,
                     opt.init_type,
                     opt.init_gain,
                     opt.n_mlps,

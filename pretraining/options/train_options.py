@@ -130,8 +130,8 @@ class TrainOptions(BaseOptions):
             help="denominator for Adam for stability",
         )
         parser.add_argument(
-            "--weight_decay", type=float, default=0, help="weight decay in Adam"
-        )
+            "--weight_decay", type=float, default=1e-5, help="weight decay in Adam"
+        )  # was 0 in paper
         parser.add_argument(
             "--clip_grad",
             type=util.str2bool,

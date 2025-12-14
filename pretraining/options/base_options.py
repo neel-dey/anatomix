@@ -104,6 +104,13 @@ class BaseOptions:
             help="instance/batch/no/layer norm for base network",
         )
         parser.add_argument(
+            "--normF",
+            type=str,
+            default="batch",
+            choices=["instance", "batch", "none", "layer"],
+            help="instance/batch/no/layer norm for MLPs",
+        )
+        parser.add_argument(
             "--actG",
             type=str,
             default="relu",
