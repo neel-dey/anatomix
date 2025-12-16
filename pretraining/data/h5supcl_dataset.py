@@ -6,7 +6,7 @@ from data.data_utils import normalize_img, random_crop
 from data.base_dataset import BaseDataset
 import torchio as tio
 import h5py
-
+import gc
 
 class H5SupCLDataset(BaseDataset):
     """
@@ -92,9 +92,14 @@ class H5SupCLDataset(BaseDataset):
         # Only 'twoview' mode is supported
         if self.mode == "twoview":
             print(self.h5_data, os.path.exists(self.h5_data))
-            self.hf = h5py.File(self.h5_data, "r")
-            self.subj_id = list(self.hf.keys())
-            self.len = len(self.hf.keys())
+            self.hf = None
+            self.subj_id = None
+            self.len = None
+
+            # We need dataset length still
+            with h5py.File(self.h5_data, "r") as f:
+                self.subj_id = list(f.keys())
+                self.len = len(self.subj_id)
             print("load views in order: {}".format(self.opt.view_order))
         else:
             raise NotImplementedError("Only 'twoview' mode is implemented.")
@@ -175,7 +180,7 @@ class H5SupCLDataset(BaseDataset):
         else:
             print("No augmentation.")
             self.augment_fn_intensity, self.augment_fn_spatial = None, None
-        # import pdb; pdb.set_trace()
+
 
     def __getitem__(self, item):
         """
@@ -194,15 +199,23 @@ class H5SupCLDataset(BaseDataset):
         return_dict = dict()
 
         # Only 'twoview' mode is supported (3D only)
-        if self.mode == "twoview":
+        if self.mode != 'twoview':
+            raise NotImplementedError("Only 'twoview' mode is implemented.")
+
+        # opening hdf5 each iter incurs a memory overhead but seems to be the
+        # only way to avoid a memory leak with num_workers > 0
+        # TODO: figure out why 
+        with h5py.File(self.h5_data, "r", libver="latest", swmr=False) as hf:
             # Ensure item is within bounds
             while item >= len(self.subj_id):
                 item = torch.randint(0, self.len, ()).numpy()
+            
             assert (
                 self.dimension == 3
             ), f"Only support 3D data loading in mode {self.mode}"
+
             subj = self.subj_id[item]
-            n_tps_per_subj = self.hf[subj]["img"].shape[0]
+            n_tps_per_subj = hf[subj]["img"].shape[0]
 
             # TODO: this can be simplified to just assign random i and j
             # between 0 and 1 (integers) and make sure that they dont match
@@ -221,7 +234,7 @@ class H5SupCLDataset(BaseDataset):
 
             # Load and normalize images for both views
             A_orig = normalize_img(
-                self.hf[subj]["img"][i],
+                hf[subj]["img"][i],
                 percentile=self.percentile,
                 zero_centered=self.zero_centered,
             )[None, ...]
@@ -230,7 +243,7 @@ class H5SupCLDataset(BaseDataset):
             )  # Dummy variable that contains the subject id
 
             B_orig = normalize_img(
-                self.hf[subj]["img"][j],
+                hf[subj]["img"][j],
                 percentile=self.percentile,
                 zero_centered=self.zero_centered,
             )[None, ...]
@@ -242,7 +255,7 @@ class H5SupCLDataset(BaseDataset):
             )  # Dummy variable that contains the subject id
 
             # Load segmentation (assumed to be the same for both views)
-            AB_seg_orig = np.array(self.hf[subj]["seg"])
+            AB_seg_orig = np.array(hf[subj]["seg"])
 
             if self.opt.augment and self.isTrain:
                 # Create TorchIO subjects for augmentation
@@ -284,6 +297,11 @@ class H5SupCLDataset(BaseDataset):
                 return_dict["A_seg"] = A["label"][tio.DATA]
                 return_dict["B_seg"] = B["label"][tio.DATA]
 
+                # free transform history
+                A.clear_history()
+                B.clear_history()
+                gc.collect()
+
             else:
                 # No augmentation branch
                 if self.opt.resize:
@@ -303,6 +321,10 @@ class H5SupCLDataset(BaseDataset):
                     B = reproduce_transform(B)
                     B_orig = B["img"][tio.DATA]
 
+                    A.clear_history()
+                    B.clear_history()
+                    gc.collect()
+
                 # Convert to torch tensors
                 return_dict["A"] = torch.from_numpy(A_orig).float()
                 return_dict["B"] = torch.from_numpy(B_orig).float()
@@ -317,11 +339,10 @@ class H5SupCLDataset(BaseDataset):
                 if self.load_mask:
                     raise NotImplementedError("Mask loading is not implemented.")
                     img_keys = ["A", "B", "A_seg", "B_seg", "A_mask", "B_mask"]
-                    return_dict["A_mask"] = self.hf[subj]["mask"][i][None, ...]
-                    return_dict["B_mask"] = self.hf[subj]["mask"][j][None, ...]
+                    return_dict["A_mask"] = hf[subj]["mask"][i][None, ...]
+                    return_dict["B_mask"] = hf[subj]["mask"][j][None, ...]
 
-        else:
-            raise NotImplementedError("Only 'twoview' mode is implemented.")
+
 
         # Store the keys for reference
         return_dict["keys"] = img_keys

@@ -295,7 +295,7 @@ class BaseOptions:
 
         parser.add_argument(
             "--num_threads",
-            default=1,
+            default=12,
             type=int,
             help="# threads for loading data",
         )
