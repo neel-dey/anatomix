@@ -93,6 +93,7 @@ class CustomDatasetDataLoader:
             num_workers=int(opt.num_threads),
             worker_init_fn=seed_worker,
             drop_last=True if opt.isTrain else False,
+            pin_memory=True,
         )
 
     def set_epoch(self, epoch):
