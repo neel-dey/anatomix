@@ -379,10 +379,18 @@ class SupCLModel(BaseModel):
                     self.model_names += ["F"]
 
                 # Define loss functions for each NCE layer
-                self.criterionNCE = []
+                self.criterionNCE = nn.ModuleList()
                 for nce_layer in self.nce_layers:
                     self.criterionNCE.append(
                         SupPatchNCELoss(opt).to(self.device)
+                    )
+
+                # Compile losses:
+                print('Compiling loss functions...')
+                for i, nce_layer in enumerate(self.nce_layers):
+                    self.criterionNCE[i] = torch.compile(
+                        self.criterionNCE[i],
+                        mode="default",
                     )
 
             # Selectively unfreeze layers if specified
@@ -483,36 +491,52 @@ class SupCLModel(BaseModel):
         iters : int
             The current training iteration (used for gradient accumulation).
         """
-        # Forward pass and accumulate gradients
+        # setup gradient scaling
+        if not hasattr(self, 'scaler'):
+            self.scaler = torch.cuda.amp.GradScaler(
+                enabled=(self.opt.gpu_ids is not None)
+            )
+
+        # Use bfloat16 if supported
+        if torch.cuda.is_bf16_supported():
+            amp_dtype = torch.bfloat16
+        else:
+            amp_dtype = torch.float16
+
         accum_iter = self.grad_accum_iters  # e.g., 4
+        
+        # Forward pass and accumulate gradients
         with torch.set_grad_enabled(True):
-            self.forward()
-            self.loss_G = self.compute_G_loss()
-            self.loss_G = self.loss_G / accum_iter
-            self.loss_G.backward()
+            # amp:
+            with torch.amp.autocast(device_type='cuda', dtype=amp_dtype):
+                self.forward()
+                self.loss_G = self.compute_G_loss()
+                self.loss_G = self.loss_G / accum_iter
+            
+            # backward with scaler
+            self.scaler.scale(self.loss_G).backward()
 
-        # Update weights after accum_iter steps
         if (iters) % accum_iter == 0:
-            self.optimizer_G.step()
-
-            if (
-                self.opt.lambda_NCE > 0
-                and self.opt.use_mlp
-            ):
+            # step with scaler
+            self.scaler.step(self.optimizer_G)
+            
+            if self.opt.lambda_NCE > 0 and self.opt.use_mlp:
                 if self.opt.clip_grad:
+                    # unscale before clipping
+                    self.scaler.unscale_(self.optimizer_F)
                     nn.utils.clip_grad_norm_(
                         self.netF.parameters(),
-                        max_norm=self.opt.max_norm,
+                        max_norm=self.opt.max_norm, 
                         norm_type=2,
                         error_if_nonfinite=True,
                     )
-                self.optimizer_F.step()
-            # Zero gradients
+                self.scaler.step(self.optimizer_F)
+            
+            # update scaler
+            self.scaler.update()
+
             self.optimizer_G.zero_grad()
-            if (
-                self.opt.lambda_NCE > 0
-                and self.opt.use_mlp
-            ):
+            if self.opt.lambda_NCE > 0 and self.opt.use_mlp:
                 self.optimizer_F.zero_grad()
 
     def set_input(self, input, verbose=False):

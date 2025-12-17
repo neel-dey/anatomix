@@ -35,6 +35,10 @@ from models import create_model
 from util.visualization import Visualizer
 from util.util import save_tensor
 
+import torch.backends.cudnn as cudnn
+
+cudnn.benchmark = True  # our input sizes are always fixed
+
 # -------------------------------
 # Load experiment settings
 # -------------------------------
@@ -189,6 +193,12 @@ for epoch in range(
             model.data_dependent_initialize(data)
             model.setup(opt)  # Load and print networks, create schedulers
             model.train()
+
+            # Compile:
+            print('Compiling models...')
+            model.netG = torch.compile(model.netG, mode="default")
+            if hasattr(model, "netF"):
+                model.netF = torch.compile(model.netF, mode="default")
 
         # Print info every print_freq iterations
         verbose = (total_iters % opt.print_freq == 0)
