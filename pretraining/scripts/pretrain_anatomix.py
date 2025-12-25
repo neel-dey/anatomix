@@ -17,10 +17,12 @@ def main(args):
         "--input_nc", str(args.input_nc),
         "--output_nc", str(args.output_nc),
         "--ngf", str(args.ngf),
+        "--num_downs", str(args.num_downs),
         "--netF", args.netF,
         "--n_mlps", str(args.n_mlps),
         "--num_threads", str(args.num_threads),
         "--lr", str(args.lr),
+        "--weight_decay", str(args.weight_decay),
         "--print_freq", str(args.print_freq),
         "--display_ncols", str(args.display_ncols),
         "--display_slice", str(args.display_slice),
@@ -40,6 +42,7 @@ def main(args):
         "--lambda_NCE", str(args.lambda_NCE),
         "--netF_nc", str(args.netF_nc),
         "--normG", args.normG,
+        "--normF", args.normF,
         "--netG", args.netG,
         "--grad_accum_iters", str(args.grad_accum_iters),
         "--continue_train", str(args.continue_train),
@@ -142,6 +145,12 @@ if __name__ == "__main__":
         help="number of filters in the first conv layer",
     )
     parser.add_argument(
+        "--num_downs",
+        type=int,
+        default=4,
+        help="number of downsamples in encoder",
+    )
+    parser.add_argument(
         "--netF",
         type=str,
         default="mlp_sample",
@@ -164,6 +173,12 @@ if __name__ == "__main__":
         type=float,
         default=2e-4,
         help="initial learning rate for adam",
+    )
+    parser.add_argument(
+        "--weight_decay",
+        type=float,
+        default=1e-5,
+        help="weight decay for adamw",
     )
     parser.add_argument(
         "--print_freq",
@@ -254,6 +269,12 @@ if __name__ == "__main__":
         type=str,
         default="batch",
         help="instance/batch/no/layer norm for base network",
+    )
+    parser.add_argument(
+        "--normF",
+        type=str,
+        default="batch",
+        help="instance/batch/no/layer norm for MLP",
     )
     parser.add_argument(
         "--netG",

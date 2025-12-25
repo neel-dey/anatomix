@@ -33,6 +33,7 @@ def define_G(
     activation="relu",
     pooling="Max",
     interp="nearest",
+    num_downs=4,
 ):
     """
     Create a base network to pretrain.
@@ -70,6 +71,8 @@ def define_G(
         Pooling type. Default is 'Max'.
     interp : str, optional
         Interpolation type. Default is 'nearest'.
+    num_downs : int, optional
+        Number of downsamples in encoder. Default is 4.
 
     Returns
     -------
@@ -84,7 +87,7 @@ def define_G(
             dimension,
             input_nc,
             output_nc,
-            num_downs=4,
+            num_downs=num_downs,
             ngf=ngf,
             norm=norm,
             activation=activation,

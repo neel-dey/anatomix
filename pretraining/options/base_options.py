@@ -82,6 +82,12 @@ class BaseOptions:
             help="# of gen filters in the last conv layer",
         )
         parser.add_argument(
+            "--num_downs",
+            type=int,
+            default=4,
+            help="# of downsamples in encoder",
+        )
+        parser.add_argument(
             "--skip_connection",
             type=util.str2bool,
             nargs="?",

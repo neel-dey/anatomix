@@ -350,6 +350,7 @@ class SupCLModel(BaseModel):
             final_act="none",
             pooling=opt.pool_type,
             interp=opt.interp_type,
+            num_downs=opt.num_downs,
         )
 
         # Save base network configuration to file if not already present
