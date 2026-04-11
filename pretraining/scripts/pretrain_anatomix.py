@@ -50,7 +50,9 @@ def main(args):
         "--nce_layers", args.nce_layers,
         "--nce_weights", args.nce_weights,
         "--seed", str(args.seed),
-        "--apply_same_inten_augment", str(args.apply_same_inten_augment)
+        "--apply_same_inten_augment", str(args.apply_same_inten_augment),
+        "--interp_type", str(args.interp_type),
+        "--pool_type", str(args.pool_type),
     ]
     print("Running command:\n" + " ".join(shlex.quote(x) for x in cmd))
     subprocess.run(cmd, check=True)
@@ -323,6 +325,20 @@ if __name__ == "__main__":
         type=str,
         default="False",
         help="Whether to perform the same intensity augmentation on view 1 & 2 (True/False)",
+    )
+    parser.add_argument(
+        "--pool_type",
+        type=str,
+        default="Max",
+        choices=["Max", "Avg"],
+        help="pooling type for downsampling",
+    )
+    parser.add_argument(
+        "--interp_type",
+        type=str,
+        default="nearest",
+        choices=["nearest", "trilinear"],
+        help="interpolation type for upsampling",
     )
     args = parser.parse_args()
     main(args)
