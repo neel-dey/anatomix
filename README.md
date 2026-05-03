@@ -10,11 +10,11 @@ MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 #### [Colab Tutorial: 3D Feature Extraction & 3D Multimodal Registration](https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing)
 #### [Colab Tutorial: Finetune anatomix for 3D Few-shot Segmentation with MONAI](https://colab.research.google.com/drive/1WBslSRLgAAMq6o5YFif1y0kaW9Ac15XK?usp=sharing)
 
-![Highlight collage](https://www.neeldey.com/files/anatomix_github_highlight.png)
-
-> **New 1**: Added a new experimental model (`anatomix-dev`). It is larger (36M params), trained on even more data, and has better features. If in sliding window mode, it works best with larger crops (e.g., 256^3). Try using it instead for your experiments.
+> **New 1**: Added a new experimental model (`anatomix-dev`). It is larger (36M params), trained on even more data, and has better features. If in sliding window mode (e.g. on whole body CT), it works best with larger crops (e.g., 256^3). Try using it instead for your experiments.
 
 > **New 2**: Interested in using anatomix features to enhance segmentation training regardless of the test domain and how much data you have? Check out [DropGen](https://arxiv.org/abs/2604.02564), a simple 5-line modification to standard training that uses anatomix to get SOTA domain generalization.
+
+![Highlight collage](https://www.neeldey.com/files/anatomix_github_highlight.png)
 
 `anatomix` is a general-purpose feature extractor for 3D volumes. For any new biomedical dataset or task,
 - Its out-of-the-box features are invariant to most forms of nuisance imaging variation.
@@ -40,10 +40,14 @@ from anatomix.model.load_from_hf import load_from_hf
 
 model = load_from_hf("anatomix")          # 6M params. ICLR2025 version of the pretrained model
 # model = load_from_hf("anatomix+brains") # 6M params. Brain label augmented ICLR2025 version of the pretrained model
-# model = load_from_hf("anatomix-dev")    # 36M params. Experimental model. More parameters, better features. Give it a shot.
 ```
 
-Or load a local checkpoint:
+Or **NEW** experimental model architecture and weights available here:
+```python
+model = load_from_hf("anatomix-dev")      # 36M params. Experimental model. More parameters, better features. Give it a shot.
+```
+
+Or just load a local checkpoint:
 
 ```python
 import torch
@@ -56,6 +60,9 @@ model = Unet(
     num_downs=4,  # number of downsampling layers
     ngf=16,  # channel multiplier
 )
+
+# model = torch.compile(model)  # add if using a compiled pretrained model such as `anatomix-dev`
+
 model.load_state_dict(
     torch.load("./model-weights/anatomix.pth"),
     strict=True,
