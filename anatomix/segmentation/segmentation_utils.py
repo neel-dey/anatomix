@@ -5,6 +5,13 @@ from monai.networks.blocks import UnetOutBlock
 from glob import glob
 from natsort import natsorted
 
+from anatomix.model.network import Unet
+from anatomix.model.load_from_hf import (
+    ANATOMIX_VARIANTS,
+    load_from_hf,
+    _load_handling_compile,
+)
+
 from monai.transforms import (
     ScaleIntensityd,
     Compose,
@@ -21,49 +28,91 @@ from monai.transforms import (
     EnsureChannelFirstd,
 )
 
-from anatomix.model.network import Unet
-
 
 # -----------------------------------------------------------------------------
 # Loading pretrained model
 
 
-def load_model(pretrained_ckpt, n_classes, device):
+def load_model(
+    n_classes,
+    device,
+    *,
+    ckpt_path=None,
+    hf_variant=None,
+    num_downs=4,
+    ngf=16,
+    output_nc=16,
+    norm="batch",
+    interp="nearest",
+    pooling="Max",
+):
     """
     Load and configure a U-Net model for semantic segmentation.
-    
-    This function creates a U-Net model and optionally loads pretrained weights.
-    It adds a final output layer for the specified number of segmentation classes.
-    
+
+    This function creates a U-Net model and optionally loads pretrained
+    weights. It adds a final output layer for the specified number of
+    segmentation classes.
+
+    Exactly one of `ckpt_path` or `hf_variant` must be provided. Pass
+    `ckpt_path='scratch'` for random initialization.
+
     Parameters
     ----------
-    pretrained_ckpt : str
-        Path to pretrained model checkpoint, or 'scratch' for random initialization
     n_classes : int
-        Number of segmentation classes (excluding background)
+        Number of segmentation classes (excluding background).
     device : torch.device
-        Device to load the model on ('cuda' or 'cpu')
-        
+        Device to load the model on ('cuda' or 'cpu').
+    ckpt_path : str, optional
+        Path to a local .pth checkpoint, or the literal string 'scratch'
+        for random initialization.
+    hf_variant : str, optional
+        Variant name to download from the HuggingFace Hub
+        (see `anatomix.model.load_from_hf.ANATOMIX_VARIANTS`).
+    num_downs, ngf, output_nc, norm, interp, pooling
+        Architecture kwargs forwarded to `Unet` when loading from
+        `ckpt_path` or training from scratch. Ignored when `hf_variant`
+        is used (kwargs come from the variant registry).
+
     Returns
     -------
     new_model : torch.nn.Sequential
-        Configured model with pretrained weights (if specified) and output layer
+        Configured model with pretrained weights (if specified) and an
+        appended segmentation head sized to `n_classes`.
     """
-    # Initialize base U-Net model
-    model = Unet(3, 1, 16, 4, ngf=16).to(device)
-    
-    if pretrained_ckpt == 'scratch':
+    if (ckpt_path is None) == (hf_variant is None):
+        raise ValueError(
+            "Provide exactly one of `ckpt_path` or `hf_variant`."
+        )
+
+    if hf_variant is not None:
+        print(f"Transferring from HuggingFace variant '{hf_variant}'.")
+        model = load_from_hf(hf_variant).to(device)
+        feat_channels = ANATOMIX_VARIANTS[hf_variant]["unet_kwargs"]["output_nc"]
+    elif ckpt_path == "scratch":
         print("Training from random initialization.")
-        pass
+        model = Unet(
+            3, 1, output_nc, num_downs, ngf=ngf, norm=norm,
+            interp=interp, pooling=pooling,
+        ).to(device)
+        feat_channels = output_nc
     else:
-        print("Transferring from proposed pretrained network.")
-        model.load_state_dict(torch.load(pretrained_ckpt))
-        
+        if not os.path.isfile(ckpt_path):
+            raise FileNotFoundError(
+                f"Checkpoint file not found: {ckpt_path}"
+            )
+        print("Transferring from local checkpoint.")
+        model = Unet(
+            3, 1, output_nc, num_downs, ngf=ngf, norm=norm,
+            interp=interp, pooling=pooling,
+        ).to(device)
+        model = _load_handling_compile(
+            model, torch.load(ckpt_path, map_location="cpu"),
+        ).to(device)
+        feat_channels = output_nc
+
     # Add final classification layer
-    fin_layer = UnetOutBlock(3, 16, n_classes + 1, False).to(device)
-    new_model = torch.nn.Sequential(model, fin_layer)
-    new_model.to(device)
-    
+    fin_layer = UnetOutBlock(3, feat_channels, n_classes + 1, False).to(device)
+    new_model = torch.nn.Sequential(model, fin_layer).to(device)
     return new_model
 
 

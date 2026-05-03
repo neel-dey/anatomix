@@ -12,6 +12,10 @@ MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ![Highlight collage](https://www.neeldey.com/files/anatomix_github_highlight.png)
 
+> **New 1**: Added a new experimental model (`anatomix-dev`). It is larger (36M params), trained on even more data, and has better features. If in sliding window mode, it works best with larger crops (e.g., 256^3). Try using it instead for your experiments.
+
+> **New 2**: Interested in using anatomix features to enhance segmentation training regardless of the test domain and how much data you have? Check out [DropGen](https://arxiv.org/abs/2604.02564), a simple 5-line modification to standard training that uses anatomix to get SOTA domain generalization.
+
 `anatomix` is a general-purpose feature extractor for 3D volumes. For any new biomedical dataset or task,
 - Its out-of-the-box features are invariant to most forms of nuisance imaging variation.
 - Its out-of-the-box weights are a good initialization for finetuning when given limited annotations.
@@ -25,11 +29,21 @@ volumes to learn approximate appearance invariance and pose
 equivariance for images with randomly sampled biomedical shape configurations with
 random intensities and artifacts.
 
-> Note: This repo was recently bumped up to PyTorch 2.8.0 and Python 3.11. If you find any bugs or changes in performance, please open an issue.
-
 ## Load weights for inference / feature extraction / finetuning
 
 `anatomix` is just a pretrained UNet! Use it for whatever you like.
+
+Pull the model and weights from HuggingFace Hub:
+
+```python
+from anatomix.model.load_from_hf import load_from_hf
+
+model = load_from_hf("anatomix")          # 6M params. ICLR2025 version of the pretrained model
+# model = load_from_hf("anatomix+brains") # 6M params. Brain label augmented ICLR2025 version of the pretrained model
+# model = load_from_hf("anatomix-dev")    # 36M params. Experimental model. More parameters, better features. Give it a shot.
+```
+
+Or load a local checkpoint:
 
 ```python
 import torch
@@ -50,7 +64,7 @@ model.load_state_dict(
 
 See how to use it on real data for feature extraction or registration in [this tutorial](https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing). Or if you want to finetune for your own task, check out [this tutorial](https://colab.research.google.com/drive/1WBslSRLgAAMq6o5YFif1y0kaW9Ac15XK?usp=sharing) instead.
 
-(If your task involves brains, you might benefit by using the `anatomix+brains.pth` weights instead, where we synthesize training volumes using both our synthetic label ensembles and real brain labels.)
+(If your task involves brains, you might benefit by using the `anatomix+brains` (6M) or `anatomix-dev` (36M) weights instead.)
 
 ## Install dependencies:
 
@@ -68,7 +82,7 @@ Or install the dependencies manually:
 ```
 conda create -n anatomix python=3.11
 conda activate anatomix
-pip install numpy nibabel scipy scikit-image nilearn h5py matplotlib torch==2.8.0 tensorboard tqdm monai torchio SimpleITK natsort
+pip install numpy nibabel scipy scikit-image nilearn h5py matplotlib torch==2.8.0 tensorboard tqdm monai torchio SimpleITK natsort huggingface_hub
 ```
 
 ## Folder organization
