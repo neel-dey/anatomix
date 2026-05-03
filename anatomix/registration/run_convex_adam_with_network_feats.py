@@ -25,6 +25,7 @@ warnings.filterwarnings("ignore")
 # coupled convex optimisation with adam instance optimisation
 def convex_adam(
     ckpt_path,
+    hf_variant,
     expname,
     lambda_weight,
     grid_sp,
@@ -47,6 +48,12 @@ def convex_adam(
     fixed_seg=None,
     moving_seg=None,
     downscale_feat_scalar=0.1,
+    num_downs=4,
+    ngf=16,
+    output_nc=16,
+    norm="batch",
+    interp="nearest",
+    pooling="Max",
 ):
     """
     This function first extracts anatomix and MIND features from the input
@@ -55,8 +62,12 @@ def convex_adam(
 
     Parameters
     ----------
-    ckpt_path : str
-        Path to the model checkpoint.
+    ckpt_path : str or None
+        Path to a local model checkpoint (.pth). Mutually exclusive with
+        `hf_variant`.
+    hf_variant : str or None
+        Variant name to download from the HuggingFace Hub. Mutually
+        exclusive with `ckpt_path`.
     expname : str
         Name of the experiment for logging and output file naming.
     lambda_weight : float
@@ -112,10 +123,11 @@ def convex_adam(
     
     # load model:
     print('Loading model')
-    if not os.path.isfile(ckpt_path):
-        raise FileNotFoundError(f"Checkpoint file not found: {ckpt_path}")
-    
-    model = load_model(ckpt_path)
+    model = load_model(
+        ckpt_path=ckpt_path, hf_variant=hf_variant,
+        num_downs=num_downs, ngf=ngf, output_nc=output_nc,
+        norm=norm, interp=interp, pooling=pooling,
+    )
     
     # load images:
     affine_mtx = nib.load(fixed_image).affine
@@ -331,9 +343,47 @@ if __name__=="__main__":
         "--exp_name", type=str, required=True,
         help="Experiment name for logging and output purposes (required)."
     )
+    src = parser.add_mutually_exclusive_group(required=True)
+    src.add_argument(
+        "--ckpt_path", type=str, default=None,
+        help="Path to a local .pth model checkpoint."
+    )
+    src.add_argument(
+        "--hf_variant", type=str, default=None,
+        help="HuggingFace Hub variant to download from neeldey/anatomix "
+             "(e.g. 'anatomix', 'anatomix+brains', 'anatomix-dev')."
+    )
+    # Unet architecture kwargs. Only used with --ckpt_path; ignored for
+    # --hf_variant (kwargs come from the variant registry).
     parser.add_argument(
-        "--ckpt_path", type=str, required=True,
-        help="Path to the checkpoint for loading the model (required)."
+        "--num_downs", type=int, default=4,
+        help="Number of downsampling layers in the U-Net. Default 4. "
+             "Only used with --ckpt_path."
+    )
+    parser.add_argument(
+        "--ngf", type=int, default=16,
+        help="Channel multiplier for the U-Net. Default 16. "
+             "Only used with --ckpt_path."
+    )
+    parser.add_argument(
+        "--output_nc", type=int, default=16,
+        help="Number of output feature channels. Default 16. "
+             "Only used with --ckpt_path."
+    )
+    parser.add_argument(
+        "--norm", type=str, default="batch",
+        help="Normalization type ('batch', 'instance', 'none'). "
+             "Default 'batch'. Only used with --ckpt_path."
+    )
+    parser.add_argument(
+        "--interp", type=str, default="nearest",
+        help="Decoder upsampling mode ('nearest' or 'trilinear'). "
+             "Default 'nearest'. Only used with --ckpt_path."
+    )
+    parser.add_argument(
+        "--pooling", type=str, default="Max",
+        help="Pooling type ('Max' or 'Avg'). Default 'Max'. "
+             "Only used with --ckpt_path."
     )
     parser.add_argument(
         "--result_path", type=str, default='./',
@@ -418,6 +468,7 @@ if __name__=="__main__":
 
     convex_adam(
         args.ckpt_path,
+        args.hf_variant,
         args.exp_name,
         args.lambda_weight,
         args.grid_sp,
@@ -439,4 +490,10 @@ if __name__=="__main__":
         args.warp_seg,
         args.path_seg_fixed,
         args.path_seg_moving,
+        num_downs=args.num_downs,
+        ngf=args.ngf,
+        output_nc=args.output_nc,
+        norm=args.norm,
+        interp=args.interp,
+        pooling=args.pooling,
     )

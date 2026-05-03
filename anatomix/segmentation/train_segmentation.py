@@ -89,9 +89,16 @@ def main(opt):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     new_model = load_model(
-        opt.pretrained_ckpt,
         opt.n_classes,
         device,
+        ckpt_path=opt.pretrained_ckpt,
+        hf_variant=opt.hf_variant,
+        num_downs=opt.num_downs,
+        ngf=opt.ngf,
+        output_nc=opt.output_nc,
+        norm=opt.norm,
+        interp=opt.interp,
+        pooling=opt.pooling,
     )
     
     # Create Dice + CE loss function
@@ -291,12 +298,52 @@ if __name__ == "__main__":
         '--train_amount', type=int, default=3,
         help="No. of training samples to use for few-shot training",
     )
-    parser.add_argument(
+    src = parser.add_mutually_exclusive_group(required=True)
+    src.add_argument(
         '--pretrained_ckpt',
         type=str,
-        default='../../model-weights/anatomix.pth',
-        help="Default points to model weights path. "
-        "Set to 'scratch' for random initialization",
+        default=None,
+        help="Path to a local .pth checkpoint, or 'scratch' for random "
+             "initialization.",
+    )
+    src.add_argument(
+        '--hf_variant',
+        type=str,
+        default=None,
+        help="HuggingFace Hub variant to download from neeldey/anatomix "
+             "(e.g. 'anatomix', 'anatomix+brains', 'anatomix-dev').",
+    )
+    # Unet architecture kwargs. Only used with --pretrained_ckpt (or 'scratch');
+    # ignored for --hf_variant (kwargs come from the variant registry).
+    parser.add_argument(
+        '--num_downs', type=int, default=4,
+        help="Number of downsampling layers in the U-Net. Default 4. "
+             "Only used with --pretrained_ckpt.",
+    )
+    parser.add_argument(
+        '--ngf', type=int, default=16,
+        help="Channel multiplier for the U-Net. Default 16. "
+             "Only used with --pretrained_ckpt.",
+    )
+    parser.add_argument(
+        '--output_nc', type=int, default=16,
+        help="Number of output feature channels of the U-Net. Default 16. "
+             "Only used with --pretrained_ckpt.",
+    )
+    parser.add_argument(
+        '--norm', type=str, default='batch',
+        help="Normalization type ('batch', 'instance', 'none'). "
+             "Default 'batch'. Only used with --pretrained_ckpt.",
+    )
+    parser.add_argument(
+        '--interp', type=str, default='nearest',
+        help="Decoder upsampling mode ('nearest' or 'trilinear'). "
+             "Default 'nearest'. Only used with --pretrained_ckpt.",
+    )
+    parser.add_argument(
+        '--pooling', type=str, default='Max',
+        help="Pooling type ('Max' or 'Avg'). Default 'Max'. "
+             "Only used with --pretrained_ckpt.",
     )
     parser.add_argument(
         '--exp_name',

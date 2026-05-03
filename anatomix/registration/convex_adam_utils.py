@@ -1,3 +1,5 @@
+import os
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,28 +10,70 @@ import time
 from monai.inferers import sliding_window_inference
 
 from anatomix.model.network import Unet
+from anatomix.model.load_from_hf import load_from_hf, _load_handling_compile
 
 
-def load_model(ckpt_path):
+def load_model(
+    ckpt_path=None,
+    hf_variant=None,
+    *,
+    num_downs=4,
+    ngf=16,
+    output_nc=16,
+    norm="batch",
+    interp="nearest",
+    pooling="Max",
+):
     """
-    Load a pretrained U-Net model from a checkpoint file.
-    
+    Load a pretrained U-Net model.
+
+    Exactly one of `ckpt_path` or `hf_variant` must be provided.
+
     Parameters
     ----------
-    ckpt_path : str
-        Path to the model checkpoint file.
-        
+    ckpt_path : str, optional
+        Path to a local .pth checkpoint.
+    hf_variant : str, optional
+        Variant name to download from the HuggingFace Hub
+        (see `anatomix.model.load_from_hf.ANATOMIX_VARIANTS`).
+    num_downs, ngf, output_nc, norm, interp, pooling
+        Architecture kwargs forwarded to `Unet` when loading from
+        `ckpt_path`. Ignored when `hf_variant` is used (kwargs come from
+        the variant registry).
+
     Returns
     -------
     model : torch.nn.Module
         Loaded U-Net model in frozen evaluation mode.
     """
+    if (ckpt_path is None) == (hf_variant is None):
+        raise ValueError(
+            "Provide exactly one of `ckpt_path` or `hf_variant`."
+        )
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = Unet(3, 1, 16, 4, ngf=16).to(device)
+
+    if hf_variant is not None:
+        model = load_from_hf(hf_variant)
+    elif ckpt_path == "scratch":
+        raise ValueError(
+            "'scratch' is not supported for registration; "
+            "registration requires pretrained weights."
+        )
+    else:
+        if not os.path.isfile(ckpt_path):
+            raise FileNotFoundError(
+                f"Checkpoint file not found: {ckpt_path}"
+            )
+        model = Unet(
+            3, 1, output_nc, num_downs, ngf=ngf, norm=norm,
+            interp=interp, pooling=pooling,
+        )
+        model = _load_handling_compile(
+            model, torch.load(ckpt_path, map_location="cpu"),
+        )
 
     model.to(device)
-    model.load_state_dict(torch.load(ckpt_path), strict=True)
-        
     model.eval()
     return model
 

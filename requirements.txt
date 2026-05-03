@@ -12,3 +12,4 @@ monai
 tensorboard
 tqdm
 natsort
+huggingface_hub

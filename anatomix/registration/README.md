@@ -4,6 +4,8 @@
 
 ![Qualitative registration collage](https://www.neeldey.com/files/qualitative-registration-v2.png)
 
+> **New 1**: Added a new experimental model (`anatomix-dev`). It is larger (36M params), trained on even more data, and has better features. If in sliding window mode, it works best with larger crops (e.g., 256^3). Try using it instead for your experiments.
+
 The demo script in this folder extracts pretrained network features from input
 volumes and runs a registration solver on the features to align volumes
 across imaging modalities.
@@ -18,12 +20,14 @@ clip the CT values to [-450, 450] HU and register MRI volumes to CT volumes.
 
 Example usage to register `moving.nii.gz` to `fixed.nii.gz` (with optional
 registration masks `moving_mask.nii.gz` and `fixed.nii.gz`), assuming that 
-fixed is a CT volume:
+fixed is a CT volume.
+
+Pulling weights from the HuggingFace Hub:
 ```bash
 python run_convex_adam_with_network_feats.py \
     --fixed fixed.nii.gz \
     --moving moving.nii.gz \
-    --ckpt_path ../../model-weights/anatomix.pth \
+    --hf_variant anatomix \
     --exp_name demo \
     --use_mask \
     --path_mask_fixed fixed_mask.nii.gz \
@@ -32,11 +36,43 @@ python run_convex_adam_with_network_feats.py \
     --fixed_maxclip 450
 ```
 
+Or using a local checkpoint. When loading a local `.pth`, the U-Net
+architecture flags must be set to match the checkpoint that was saved.
+The values below are the defaults for the published `anatomix` and
+`anatomix+brains` weights (so they could be omitted), but they're shown
+explicitly here because non-default checkpoints will need to override them:
+```bash
+python run_convex_adam_with_network_feats.py \
+    --fixed fixed.nii.gz \
+    --moving moving.nii.gz \
+    --ckpt_path ../../model-weights/anatomix.pth \
+    --num_downs 4 \
+    --ngf 16 \
+    --output_nc 16 \
+    --norm batch \
+    --interp nearest \
+    --pooling Max \
+    --exp_name demo \
+    --use_mask \
+    --path_mask_fixed fixed_mask.nii.gz \
+    --path_mask_moving moving_mask.nii.gz \
+    --fixed_minclip -450 \
+    --fixed_maxclip 450
+```
+
+Exactly one of `--ckpt_path` or `--hf_variant` must be provided. The
+architecture flags (`--num_downs`, `--ngf`, `--output_nc`, `--norm`,
+`--interp`, `--pooling`) are only consulted with `--ckpt_path`; for
+`--hf_variant`, kwargs come from the variant registry on the Hub side.
+
 Entire CLI:
 ```bash
 $ python run_convex_adam_with_network_feats.py -h
 
-usage: run_convex_adam_with_network_feats.py [-h] --fixed FIXED --moving MOVING --exp_name EXP_NAME --ckpt_path CKPT_PATH
+usage: run_convex_adam_with_network_feats.py [-h] --fixed FIXED --moving MOVING --exp_name EXP_NAME
+                                             (--ckpt_path CKPT_PATH | --hf_variant HF_VARIANT)
+                                             [--num_downs NUM_DOWNS] [--ngf NGF] [--output_nc OUTPUT_NC]
+                                             [--norm NORM] [--interp INTERP] [--pooling POOLING]
                                              [--result_path RESULT_PATH] [--lambda_weight LAMBDA_WEIGHT]
                                              [--grid_sp GRID_SP] [--disp_hw DISP_HW] [--selected_niter SELECTED_NITER]
                                              [--selected_smooth SELECTED_SMOOTH] [--grid_sp_adam GRID_SP_ADAM] [--no-ic]
@@ -54,7 +90,24 @@ options:
   --moving MOVING       Path to the moving image *.nii.gz file (required).
   --exp_name EXP_NAME   Experiment name for logging and output purposes (required).
   --ckpt_path CKPT_PATH
-                        Path to the checkpoint for loading the model (required).
+                        Path to a local .pth model checkpoint. Mutually exclusive with --hf_variant.
+  --hf_variant HF_VARIANT
+                        HuggingFace Hub variant to download from neeldey/anatomix
+                        (e.g. 'anatomix', 'anatomix+brains', 'anatomix-dev').
+                        Mutually exclusive with --ckpt_path.
+  --num_downs NUM_DOWNS
+                        Number of downsampling layers in the U-Net. Default 4.
+                        Only used with --ckpt_path.
+  --ngf NGF             Channel multiplier for the U-Net. Default 16.
+                        Only used with --ckpt_path.
+  --output_nc OUTPUT_NC
+                        Number of output feature channels. Default 16.
+                        Only used with --ckpt_path.
+  --norm NORM           Normalization type ('batch', 'instance', 'none'). Default 'batch'.
+                        Only used with --ckpt_path.
+  --interp INTERP       Decoder upsampling mode ('nearest' or 'trilinear'). Default 'nearest'.
+                        Only used with --ckpt_path.
+  --pooling POOLING     Pooling type ('Max' or 'Avg'). Default 'Max'. Only used with --ckpt_path.
   --result_path RESULT_PATH
                         Directory to save the output results. Default current directory.
   --lambda_weight LAMBDA_WEIGHT
