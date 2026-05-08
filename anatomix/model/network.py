@@ -4,6 +4,8 @@
 import torch
 import torch.nn as nn
 
+from functools import partial
+
 
 # -----------------------------------------------------------------------------
 # Building blocks
@@ -133,7 +135,8 @@ def get_norm_layer(ndims, norm='batch'):
         The number of dimensions for the normalization layer (1--3).
     norm : str, optional
         The type of normalization to use. 
-        Options are 'batch', 'instance', or 'none'. 
+        Options are 'batch', 'instance', 'instance_affine', or 'none'.
+        'instance_affine' is just instance norm with learned affine rescaling. 
         Default is 'batch'.
 
     Returns
@@ -143,14 +146,20 @@ def get_norm_layer(ndims, norm='batch'):
     """
 
     if norm == 'batch':
-        Norm = getattr(nn, 'BatchNorm%dd' % ndims)
+        return getattr(nn, f'BatchNorm{ndims}d')
+
     elif norm == 'instance':
-        Norm = getattr(nn, 'InstanceNorm%dd' % ndims)
+        return getattr(nn, f'InstanceNorm{ndims}d')
+
+    elif norm == 'instance_affine':
+        Norm = getattr(nn, f'InstanceNorm{ndims}d')
+        return partial(Norm, affine=True)
+
     elif norm == 'none':
-        Norm = None
+        return None
+
     else:
-        assert 0, "Unsupported normalization: {}".format(norm)
-    return Norm
+        raise ValueError(f"Currently unsupported normalization: {norm}")
 
 
 def get_actvn_layer(activation='relu'):
