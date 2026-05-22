@@ -46,6 +46,7 @@ def main(args):
         "--netG", args.netG,
         "--grad_accum_iters", str(args.grad_accum_iters),
         "--continue_train", str(args.continue_train),
+        "--max_iters", str(args.max_iters),
         "--gpu_ids", str(args.gpu_ids),
         "--nce_layers", args.nce_layers,
         "--nce_weights", args.nce_weights,
@@ -295,6 +296,12 @@ if __name__ == "__main__":
         type=str,
         default="False",
         help="continue training: load the latest model (True/False)",
+    )
+    parser.add_argument(
+        "--max_iters",
+        type=int,
+        default=0,
+        help="hard cap on total_iters; 0 disables. Useful for smoke tests.",
     )
     parser.add_argument(
         "--gpu_ids",

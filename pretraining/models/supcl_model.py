@@ -423,6 +423,13 @@ class SupCLModel(BaseModel):
 
             self.optimizers.append(self.optimizer_G)
 
+            # Eagerly construct GradScaler so its state can be saved/loaded
+            # alongside the optimizers (resume restores _scale instead of
+            # restarting at init_scale and rediscovering a stable scale).
+            self.scaler = torch.cuda.amp.GradScaler(
+                enabled=(self.opt.gpu_ids is not None)
+            )
+
         else:
             # For inference, set feature names
             self.feat_names = ["feat", "global_feat"]
@@ -492,12 +499,6 @@ class SupCLModel(BaseModel):
         iters : int
             The current training iteration (used for gradient accumulation).
         """
-        # setup gradient scaling
-        if not hasattr(self, 'scaler'):
-            self.scaler = torch.cuda.amp.GradScaler(
-                enabled=(self.opt.gpu_ids is not None)
-            )
-
         # Use bfloat16 if supported
         if torch.cuda.is_bf16_supported():
             amp_dtype = torch.bfloat16

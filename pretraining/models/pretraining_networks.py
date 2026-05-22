@@ -505,7 +505,10 @@ def get_scheduler(optimizer, opt):
     if opt.lr_policy == "const_linear":
 
         def lambda_rule(epoch):
-            lr_l = 1.0 - max(0, epoch + opt.epoch_count - opt.n_epochs) / float(
+            # `epoch` is the scheduler's own step count. On resume, the
+            # scheduler's state_dict restores last_epoch, so we must NOT
+            # also add opt.epoch_count (that would double-count).
+            lr_l = 1.0 - max(0, epoch - opt.n_epochs) / float(
                 opt.n_epochs_decay + 1
             )
             return lr_l

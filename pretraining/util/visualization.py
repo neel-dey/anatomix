@@ -39,7 +39,7 @@ def generate_new_color(existing_colors, pastel_factor=0.5):
 
 
 class Visualizer:
-    def __init__(self, opt):
+    def __init__(self, opt, purge_step=None):
         self.opt = opt
         if opt.display_id is None:
             self.display_id = (
@@ -51,7 +51,9 @@ class Visualizer:
         self.ncols = opt.display_ncols
 
         self.dir = os.path.join(opt.checkpoints_dir, opt.name)
-        self.writer = SummaryWriter(self.dir)
+        # purge_step drops any prior events at step >= purge_step so resumed
+        # runs continue cleanly without overlapping curves at duplicate steps.
+        self.writer = SummaryWriter(self.dir, purge_step=purge_step)
         # self.create_tensorboard_connections()
         print(f"creating tensorboard at {self.dir}")
         # create a logging file to store training losses

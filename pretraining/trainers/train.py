@@ -24,8 +24,6 @@ import time
 import torch
 import random
 import numpy as np
-from glob import glob
-
 # Add parent directory to path for module imports
 sys.path.append("../")
 
@@ -81,8 +79,6 @@ opt.crop_size = crop
 
 print(f"Model: {opt.model}")
 model = create_model(opt)
-print(f"* Creating tensorboard summary writer {model.save_dir}")
-model.visualizer = Visualizer(opt)
 
 # -------------------------------
 # Training bookkeeping variables
@@ -100,42 +96,48 @@ cur_train_loss = 99
 # -------------------------------
 # Resume from checkpoint if requested
 # -------------------------------
+#
+# We peek at latest_train_state.pth (small file) to recover the exact
+# `total_iters` of the previous run, then set opt.epoch so the matching
+# numbered network weights are loaded by model.setup() later. The full
+# optimizer/scheduler/scaler restore happens after model.setup() via
+# model.load_training_state().
 
-if opt.continue_train and opt.epoch == "latest":
-    opt.pretrained_name = opt.name
-    print(f"Retrieve latest checkpoints from {model.save_dir}")
-    # Find all base network checkpoints except 'latest' and 'best_val'
-    x = (
-        set(glob(model.save_dir + "/*net_G.pth"))
-        - set(glob(model.save_dir + "/*latest_net_G.pth"))
-        - set(glob(model.save_dir + "/*best_val*"))
-    )
-    if len(x) > 0:
-        latest = (
-            sorted(x, key=os.path.getmtime)[-1].split("/")[-1].split("_")[0]
-        )
-        opt.epoch = latest
-        latest_epoch = int(latest) // train_dataset_size
-        opt.epoch_count = latest_epoch
+if opt.continue_train:
+    train_state_path = os.path.join(model.save_dir, "latest_train_state.pth")
+    if os.path.exists(train_state_path):
+        # CPU-only peek: don't materialize optimizer tensors on GPU yet.
+        peek = torch.load(train_state_path, map_location="cpu")
+        total_iters = int(peek["total_iters"])
+        opt.epoch = str(total_iters)
+        opt.epoch_count = total_iters // train_dataset_size
         print(
-            "Found %d checkpoints, take the latest one %s (iters), latest epoch %d"
-            % (len(x), opt.epoch, latest_epoch)
+            f"Resuming from iter {total_iters} (epoch {opt.epoch_count}); "
+            f"will load {opt.epoch}_net_*.pth and latest_train_state.pth"
         )
-        # Load best validation loss from file
-        with open(model.save_dir + "/best_val_loss.txt", "r") as f:
-            best_evaluation_loss = float(f.readline().rstrip())
-            print(f"Load evaluation record : {best_evaluation_loss:.6f}")
-        # Restore learning rate if needed
-        if latest_epoch > opt.epoch_count:
-            print("Retrieve learning rate")
-            for _ in range(opt.epoch_count, opt.latest_epoch):
-                model.update_learning_rate()
-            opt.lr = model.optimizers[0].param_groups[0]["lr"]
     else:
-        print("No checkpoints found, start from scratch")
+        print(
+            f"continue_train requested but no {train_state_path} found; "
+            "starting from scratch"
+        )
         opt.continue_train = False
-        opt.epoch = 0
+        opt.epoch = "0"
         opt.epoch_count = 0
+
+# Defensive best-val read (older runs may have written this file even
+# without a paired train_state; load_training_state will overwrite if
+# present).
+best_val_txt = os.path.join(model.save_dir, "best_val_loss.txt")
+if opt.continue_train and os.path.exists(best_val_txt):
+    with open(best_val_txt, "r") as f:
+        best_evaluation_loss = float(f.readline().rstrip())
+    print(f"Load best_val_loss.txt : {best_evaluation_loss:.6f}")
+
+# Build the SummaryWriter AFTER we know total_iters so purge_step drops
+# any prior events at or after the resume step. Without this, TensorBoard
+# would overlay old and new scalar curves at duplicate step values.
+print(f"* Creating tensorboard summary writer {model.save_dir}")
+model.visualizer = Visualizer(opt, purge_step=total_iters if total_iters > 0 else None)
 
 est_iters = (
     int(train_dataset_size / bs) * bs * (opt.n_epochs + opt.n_epochs_decay)
@@ -144,7 +146,6 @@ print(
     "Training start from epoch %d, total epochs: %d - est iters: %d"
     % ((opt.epoch_count, opt.n_epochs + opt.n_epochs_decay, est_iters))
 )
-total_iters = opt.epoch_count * train_dataset_size
 print(f"Starting iters: {total_iters}")
 
 # -------------------------------
@@ -154,11 +155,14 @@ print(f"Starting iters: {total_iters}")
 times = []
 t_data = 0  # Time spent loading data
 
+stop_now = False  # set by inner loop when max_iters is reached
 for epoch in range(
     opt.epoch_count, opt.n_epochs + opt.n_epochs_decay + 1
 ):  # outer loop for different epochs; we save the model by <epoch_count>, <epoch_count>+<save_latest_freq>
     if epoch > opt.stop_epoch:
         print(f"stop training at epoch {epoch}")
+        break
+    if stop_now:
         break
 
     epoch_start_time = time.time()  # timer for entire epoch
@@ -193,6 +197,26 @@ for epoch in range(
             model.data_dependent_initialize(data)
             model.setup(opt)  # Load and print networks, create schedulers
             model.train()
+
+            # Restore optimizer/scheduler/scaler state (only meaningful on
+            # resume; returns None for cold starts or warm-start runs).
+            # Note: total_iters was already set from the peek above; don't
+            # restore it from extras here — total_iters has been incremented
+            # once for this first iter, so re-overwriting would replay an iter.
+            if opt.continue_train:
+                extras = model.load_training_state()
+                if extras is not None:
+                    best_evaluation_loss = float(
+                        extras.get("best_evaluation_loss", best_evaluation_loss)
+                    )
+                    last_eval_loss = float(
+                        extras.get("last_eval_loss", last_eval_loss)
+                    )
+                    print(
+                        f"Restored training state at iter "
+                        f"{extras.get('total_iters')}; best_val="
+                        f"{best_evaluation_loss:.6f}"
+                    )
 
             # Compile:
             print('Compiling models...')
@@ -278,6 +302,12 @@ for epoch in range(
 
         if total_iters % opt.evaluation_freq == 0:
             model.save_networks(total_iters)
+            model.save_training_state({
+                "total_iters": total_iters,
+                "epoch": epoch,
+                "best_evaluation_loss": best_evaluation_loss,
+                "last_eval_loss": last_eval_loss,
+            })
             model.eval()
 
             cur_eval_loss = 0
@@ -339,6 +369,21 @@ for epoch in range(
         if verbose:
             print(f"End of iters [{total_iters}]")
 
+        if opt.max_iters > 0 and total_iters >= opt.max_iters:
+            print(
+                f"Reached max_iters={opt.max_iters} at total_iters={total_iters}; "
+                "saving final train_state and stopping."
+            )
+            model.save_networks(total_iters)
+            model.save_training_state({
+                "total_iters": total_iters,
+                "epoch": epoch,
+                "best_evaluation_loss": best_evaluation_loss,
+                "last_eval_loss": last_eval_loss,
+            })
+            stop_now = True
+            break
+
     # ----------------------------------
     # Cache model every <save_freq> its
     # ----------------------------------
@@ -350,6 +395,12 @@ for epoch in range(
         )
         model.save_networks("latest")
         model.save_networks(total_iters)
+        model.save_training_state({
+            "total_iters": total_iters,
+            "epoch": epoch,
+            "best_evaluation_loss": best_evaluation_loss,
+            "last_eval_loss": last_eval_loss,
+        })
         visuals = model.get_current_visuals()  # get image results
         if len(visuals) > 0:
             save_tensor(
