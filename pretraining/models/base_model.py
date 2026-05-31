@@ -115,16 +115,17 @@ class BaseModel(ABC):
                 networks.get_scheduler(optimizer, opt)
                 for optimizer in self.optimizers
             ]
-        if (
-            not self.isTrain
-            or opt.continue_train
-            or (
-                opt.pretrained_name is not None
-                and opt.pretrained_name != "None"
-            )
-        ):
-            load_suffix = opt.epoch
-            self.load_networks(load_suffix)
+
+        # Two distinct load paths:
+        # - continue_train: resume the *same* run from its save_dir (weights
+        #   here; optimizer/scheduler/scaler restored by load_training_state).
+        # - pretrained_name: warm-start weights from a *different* run; do
+        #   NOT touch optimizer/scheduler/scaler.
+        # Inference always loads weights from save_dir.
+        if not self.isTrain or opt.continue_train:
+            self.load_networks(opt.epoch, from_pretrained=False)
+        elif opt.pretrained_name is not None and opt.pretrained_name != "None":
+            self.load_networks(opt.epoch, from_pretrained=True)
 
         self.print_networks(opt.verbose)
 
@@ -249,11 +250,14 @@ class BaseModel(ABC):
                 else:
                     torch.save(net.cpu().state_dict(), save_path)
 
-    def load_networks(self, epoch):
+    def load_networks(self, epoch, from_pretrained=False):
         """Load all the networks from the disk.
 
         Parameters:
-            epoch (int) -- current epoch; used in the file name '%s_net_%s.pth' % (epoch, name)
+            epoch (int) -- used in the file name '%s_net_%s.pth' % (epoch, name)
+            from_pretrained (bool) -- if True, load from opt.pretrained_name's
+                checkpoints dir (warm start). If False, load from this run's
+                save_dir (fresh inference or continue_train).
         """
         assert (
             len(self.load_model_names) > 0
@@ -262,10 +266,7 @@ class BaseModel(ABC):
         for name in self.load_model_names:
             if isinstance(name, str):
                 load_filename = "%s_net_%s.pth" % (epoch, name)
-                if self.opt.isTrain and (
-                    self.opt.pretrained_name is not None
-                    and self.opt.pretrained_name != "None"
-                ):
+                if from_pretrained:
                     print(self.opt.pretrained_name)
                     load_dir = os.path.join(
                         self.opt.checkpoints_dir, self.opt.pretrained_name
@@ -283,8 +284,13 @@ class BaseModel(ABC):
                 state_dict = torch.load(
                     load_path, map_location=str(self.device)
                 )
-                print(list(state_dict.keys())[0])
-                if "module" in list(state_dict.keys())[0]:
+                first_key = list(state_dict.keys())[0]
+                print(first_key)
+                # Strip prefixes added by DataParallel (module.) and by
+                # torch.compile (_orig_mod.). Checkpoints in this codebase
+                # are saved *after* torch.compile, so resume sees _orig_mod.*
+                # keys but loads them into the uncompiled net.
+                if "module." in first_key or "_orig_mod." in first_key:
                     state_dict = self.convert_dict(state_dict)
                 if hasattr(state_dict, "_metadata"):
                     del state_dict._metadata
@@ -311,10 +317,57 @@ class BaseModel(ABC):
                     net.load_state_dict(model_dict)
                     print("Partial network initialized")
 
+    def save_training_state(self, extras):
+        """Save optimizer/scheduler/scaler state plus caller-supplied extras
+        (total_iters, epoch, best_evaluation_loss, last_eval_loss) to a single
+        always-overwritten file. Pairs with the most recent numbered
+        network checkpoint so resume can be exact.
+
+        Parameters:
+            extras (dict) -- extra scalars to persist alongside state_dicts.
+        """
+        state = {
+            "optimizers": [opt.state_dict() for opt in self.optimizers],
+            "schedulers": [s.state_dict() for s in getattr(self, "schedulers", [])],
+            "scaler": self.scaler.state_dict() if hasattr(self, "scaler") else None,
+        }
+        state.update(extras)
+        save_path = os.path.join(self.save_dir, "latest_train_state.pth")
+        torch.save(state, save_path)
+
+    def load_training_state(self):
+        """Load latest_train_state.pth from save_dir and restore optimizer,
+        scheduler, and scaler state. Returns the dict of extras (total_iters,
+        epoch, best_evaluation_loss, last_eval_loss) or None if the file is
+        missing (older runs warm-start from weights only).
+        """
+        load_path = os.path.join(self.save_dir, "latest_train_state.pth")
+        if not os.path.exists(load_path):
+            return None
+        print(f"Loading training state from {load_path}")
+        state = torch.load(load_path, map_location=str(self.device))
+
+        for opt_, sd in zip(self.optimizers, state.get("optimizers", [])):
+            opt_.load_state_dict(sd)
+        for sch, sd in zip(getattr(self, "schedulers", []), state.get("schedulers", [])):
+            sch.load_state_dict(sd)
+        if state.get("scaler") is not None and hasattr(self, "scaler"):
+            self.scaler.load_state_dict(state["scaler"])
+
+        extras = {
+            k: v for k, v in state.items()
+            if k not in ("optimizers", "schedulers", "scaler")
+        }
+        return extras
+
     def convert_dict(self, state_dict):
+        # Strips both "module." (DataParallel) and "_orig_mod." (torch.compile)
+        # prefixes. Plain (uncompiled, non-DP) state_dicts pass through
+        # untouched, so the same loader handles all three checkpoint shapes.
         new_dict = OrderedDict()
         for k in list(state_dict.keys()):
-            new_dict[k.replace("module.", "")] = state_dict[k]
+            new_key = k.replace("module.", "").replace("_orig_mod.", "")
+            new_dict[new_key] = state_dict[k]
         return new_dict
 
     def print_networks(self, verbose):
