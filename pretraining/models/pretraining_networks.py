@@ -34,6 +34,7 @@ def define_G(
     pooling="Max",
     interp="nearest",
     num_downs=4,
+    norm_eps=1e-5,
 ):
     """
     Create a base network to pretrain.
@@ -98,6 +99,7 @@ def define_G(
             use_skip_connection=True,
             pooling=pooling,
             interp=interp,
+            norm_eps=norm_eps,
         )
     else:
         raise NotImplementedError(
@@ -121,6 +123,7 @@ def define_F(
     opt=None,
     activation="relu",
     use_mlp=True,
+    norm_eps=1e-5,
 ):
     """
     Create a patch sampling network (feature projector).
@@ -168,6 +171,7 @@ def define_F(
             n_mlps=n_mlps,
             activation=activation,
             norm=norm,
+            norm_eps=norm_eps,
         )
     else:
         raise NotImplementedError(
@@ -245,6 +249,7 @@ class PatchSampleF(nn.Module):
         n_mlps=2,
         activation="relu",
         norm="batch",
+        norm_eps=1e-5,
     ):
         # use the same patch_ids for multiple images in the batch
         super(PatchSampleF, self).__init__()
@@ -259,6 +264,7 @@ class PatchSampleF(nn.Module):
         self.n_mlps = n_mlps
         self.activation = activation
         self.normtype = norm
+        self.norm_eps = norm_eps
 
     def create_mlp(self, feats):
         """
@@ -271,7 +277,7 @@ class PatchSampleF(nn.Module):
         """
         for mlp_id, feat in enumerate(feats):
             input_nc = feat.shape[1]
-            norm = get_norm_layer(1, self.normtype)
+            norm = get_norm_layer(1, self.normtype, eps=self.norm_eps)
             Activation = get_actvn_layer(self.activation)
 
             if self.n_mlps == 2:

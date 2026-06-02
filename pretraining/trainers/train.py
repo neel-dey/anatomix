@@ -252,6 +252,18 @@ for epoch in range(
         # Visualization and Logging
         # -------------------------------
 
+        # Log pre-clip grad norms on every optimizer step (i.e. after each
+        # grad-accumulation window), decoupled from print_freq. This is exactly
+        # the gradient that gets clipped/applied; no staircase from accumulation.
+        if total_iters % opt.grad_accum_iters == 0:
+            model.visualizer.writer.add_scalar(
+                "grad_norm/G", model.grad_norm_G, total_iters
+            )
+            if hasattr(model, "netF"):
+                model.visualizer.writer.add_scalar(
+                    "grad_norm/F", model.grad_norm_F, total_iters
+                )
+
         # Display current results on tensorboard
         if total_iters % opt.display_freq == 0:
             model.visualizer.display_current_results(

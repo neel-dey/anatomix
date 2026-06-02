@@ -43,8 +43,13 @@ def main(args):
         "--netF_nc", str(args.netF_nc),
         "--normG", args.normG,
         "--normF", args.normF,
+        "--norm_eps_G", str(args.norm_eps_G),
+        "--norm_eps_F", str(args.norm_eps_F),
         "--netG", args.netG,
         "--grad_accum_iters", str(args.grad_accum_iters),
+        "--clip_grad", str(args.clip_grad),
+        "--max_norm_G", str(args.max_norm_G),
+        "--max_norm_F", str(args.max_norm_F),
         "--continue_train", str(args.continue_train),
         "--max_iters", str(args.max_iters),
         "--gpu_ids", str(args.gpu_ids),
@@ -280,6 +285,18 @@ if __name__ == "__main__":
         help="instance/batch/no/layer norm for MLP",
     )
     parser.add_argument(
+        "--norm_eps_G",
+        type=float,
+        default=1e-5,
+        help="epsilon in base-network (UNet) norm layers",
+    )
+    parser.add_argument(
+        "--norm_eps_F",
+        type=float,
+        default=1e-5,
+        help="epsilon in MLP (netF) norm layers",
+    )
+    parser.add_argument(
         "--netG",
         type=str,
         default="unet",
@@ -290,6 +307,24 @@ if __name__ == "__main__":
         type=int,
         default=1,
         help="Gradient accumulation iterations",
+    )
+    parser.add_argument(
+        "--clip_grad",
+        type=str,
+        default="False",
+        help="whether to clip gradients of netG and netF (True/False)",
+    )
+    parser.add_argument(
+        "--max_norm_G",
+        type=float,
+        default=2.0,
+        help="gradient clip norm max for base network (netG)",
+    )
+    parser.add_argument(
+        "--max_norm_F",
+        type=float,
+        default=2.0,
+        help="gradient clip norm max for MLP head (netF)",
     )
     parser.add_argument(
         "--continue_train",
