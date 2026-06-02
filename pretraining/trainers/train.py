@@ -272,6 +272,20 @@ for epoch in range(
                 total_iters,
             )
 
+        # Log pre-clip grad norms on every optimizer step (i.e. after each
+        # grad-accumulation window), decoupled from print_freq. This is exactly
+        # the gradient that gets clipped/applied; no staircase from accumulation.
+        # Tagged under "metrics/" so the panels sort *after* the "loss/" panels
+        # in TensorBoard (which orders tags alphabetically: loss < metrics).
+        if total_iters % opt.grad_accum_iters == 0:
+            model.visualizer.writer.add_scalar(
+                "metrics/grad_norm_G", model.grad_norm_G, total_iters
+            )
+            if hasattr(model, "netF"):
+                model.visualizer.writer.add_scalar(
+                    "metrics/grad_norm_F", model.grad_norm_F, total_iters
+                )
+
         if (
             total_iters % opt.save_latest_freq == 0
         ):  # cache our latest model every <save_latest_freq> iterations

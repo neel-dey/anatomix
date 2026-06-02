@@ -117,6 +117,18 @@ class BaseOptions:
             help="instance/batch/no/layer norm for MLPs",
         )
         parser.add_argument(
+            "--norm_eps_G",
+            type=float,
+            default=1e-5,
+            help="epsilon in base-network (UNet) norm layers",
+        )
+        parser.add_argument(
+            "--norm_eps_F",
+            type=float,
+            default=1e-5,
+            help="epsilon in MLP (netF) norm layers",
+        )
+        parser.add_argument(
             "--actG",
             type=str,
             default="relu",

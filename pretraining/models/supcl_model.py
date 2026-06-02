@@ -351,6 +351,7 @@ class SupCLModel(BaseModel):
             pooling=opt.pool_type,
             interp=opt.interp_type,
             num_downs=opt.num_downs,
+            norm_eps=opt.norm_eps_G,
         )
 
         # Save base network configuration to file if not already present
@@ -374,6 +375,7 @@ class SupCLModel(BaseModel):
                     opt,
                     activation=opt.actF,
                     use_mlp=opt.use_mlp,
+                    norm_eps=opt.norm_eps_F,
                 )
 
                 if self.opt.use_mlp:
@@ -429,6 +431,10 @@ class SupCLModel(BaseModel):
             self.scaler = torch.cuda.amp.GradScaler(
                 enabled=(self.opt.gpu_ids is not None)
             )
+
+            # Most recent pre-clip grad norms, logged to tensorboard.
+            self.grad_norm_G = 0.0
+            self.grad_norm_F = 0.0
 
         else:
             # For inference, set feature names
@@ -519,19 +525,28 @@ class SupCLModel(BaseModel):
             self.scaler.scale(self.loss_G).backward()
 
         if (iters) % accum_iter == 0:
+            # Record netG's pre-clip grad norm; clip to max_norm_G only if requested
+            # (max_norm=inf just measures, leaving grads untouched). Unscale first so
+            # the norm is measured on true grads; scaler.step() would have unscaled
+            # anyway, so the measure-only path leaves training unchanged.
+            self.scaler.unscale_(self.optimizer_G)
+            self.grad_norm_G = nn.utils.clip_grad_norm_(
+                self.netG.parameters(),
+                max_norm=self.opt.max_norm_G if self.opt.clip_grad else float("inf"),
+                norm_type=2,
+            ).item()
             # step with scaler
             self.scaler.step(self.optimizer_G)
-            
+
             if self.opt.lambda_NCE > 0 and self.opt.use_mlp:
-                if self.opt.clip_grad:
-                    # unscale before clipping
-                    self.scaler.unscale_(self.optimizer_F)
-                    nn.utils.clip_grad_norm_(
-                        self.netF.parameters(),
-                        max_norm=self.opt.max_norm, 
-                        norm_type=2,
-                        error_if_nonfinite=True,
-                    )
+                # Always record netF's pre-clip grad norm; clip to max_norm_F only if
+                # requested (max_norm=inf just measures, leaving grads untouched).
+                self.scaler.unscale_(self.optimizer_F)
+                self.grad_norm_F = nn.utils.clip_grad_norm_(
+                    self.netF.parameters(),
+                    max_norm=self.opt.max_norm_F if self.opt.clip_grad else float("inf"),
+                    norm_type=2,
+                ).item()
                 self.scaler.step(self.optimizer_F)
             
             # update scaler

@@ -141,7 +141,12 @@ class TrainOptions(BaseOptions):
             help="whether to clip gradient",
         )
         parser.add_argument(
-            "--max_norm", type=float, default=2, help="gradient clip norm max"
+            "--max_norm_G", type=float, default=2.0,
+            help="gradient clip norm max for base network (netG)",
+        )
+        parser.add_argument(
+            "--max_norm_F", type=float, default=2.0,
+            help="gradient clip norm max for MLP head (netF)",
         )
         parser.add_argument(
             "--grad_accum_iters",

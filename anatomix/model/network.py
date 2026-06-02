@@ -124,7 +124,7 @@ class ConvBlock(nn.Module):
         return x
 
 
-def get_norm_layer(ndims, norm='batch'):
+def get_norm_layer(ndims, norm='batch', eps=1e-5):
     """
     Get the normalization layer based on the number of dimensions and type of
     normalization.
@@ -134,26 +134,32 @@ def get_norm_layer(ndims, norm='batch'):
     ndims : int
         The number of dimensions for the normalization layer (1--3).
     norm : str, optional
-        The type of normalization to use. 
+        The type of normalization to use.
         Options are 'batch', 'instance', 'instance_affine', or 'none'.
-        'instance_affine' is just instance norm with learned affine rescaling. 
+        'instance_affine' is just instance norm with learned affine rescaling.
         Default is 'batch'.
+    eps : float, optional
+        Numerical-stability epsilon baked into the norm layer. For instance
+        norm this floors the backward gain at ``1/sqrt(eps)``; raising it (e.g.
+        1e-2) caps the near-singular amplification on near-constant inputs.
+        Default 1e-5 (the PyTorch default).
 
     Returns
     -------
-    Norm : torch.nn.Module or None
-        The corresponding PyTorch normalization layer, or None if 'none'.
+    Norm : callable or None
+        A callable ``Norm(num_features)`` building the PyTorch normalization
+        layer (with ``eps`` bound), or None if 'none'.
     """
 
     if norm == 'batch':
-        return getattr(nn, f'BatchNorm{ndims}d')
+        return partial(getattr(nn, f'BatchNorm{ndims}d'), eps=eps)
 
     elif norm == 'instance':
-        return getattr(nn, f'InstanceNorm{ndims}d')
+        return partial(getattr(nn, f'InstanceNorm{ndims}d'), eps=eps)
 
     elif norm == 'instance_affine':
         Norm = getattr(nn, f'InstanceNorm{ndims}d')
-        return partial(Norm, affine=True)
+        return partial(Norm, affine=True, eps=eps)
 
     elif norm == 'none':
         return None
@@ -244,8 +250,12 @@ class Unet(nn.Module):
         Upsampling method for the decoder ('nearest' or 'trilinear'), 
         by default 'nearest'.
     use_skip_connection : bool, optional
-        Whether to use skip connections between corresponding encoder and 
+        Whether to use skip connections between corresponding encoder and
         decoder layers, by default True.
+    norm_eps : float, optional
+        Epsilon for the normalization layers (see ``get_norm_layer``). With
+        instance norm, larger values (e.g. 1e-2) cap the backward gain
+        ``1/sqrt(var+eps)`` on near-constant inputs. By default 1e-5.
 
     """
 
@@ -265,6 +275,7 @@ class Unet(nn.Module):
         pooling="Max",
         interp="nearest",
         use_skip_connection=True,
+        norm_eps=1e-5,
     ):
         """
         Initialize the U-Net model by constructing the architecture from the
@@ -286,7 +297,7 @@ class Unet(nn.Module):
         Pool = getattr(nn, '%sPool%dd' % (pooling,ndims))
 
         # Initialize normalization, activation, and final activation layers
-        Norm = get_norm_layer(ndims, norm)
+        Norm = get_norm_layer(ndims, norm, eps=norm_eps)
         Activation = get_actvn_layer(activation)
         FinalActivation = get_actvn_layer(final_act)
 
