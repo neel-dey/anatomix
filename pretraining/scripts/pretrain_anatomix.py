@@ -59,6 +59,7 @@ def main(args):
         "--apply_same_inten_augment", str(args.apply_same_inten_augment),
         "--interp_type", str(args.interp_type),
         "--pool_type", str(args.pool_type),
+        "--weigh_rarity", str(args.weigh_rarity),
     ]
     print("Running command:\n" + " ".join(shlex.quote(x) for x in cmd))
     subprocess.run(cmd, check=True)
@@ -381,6 +382,13 @@ if __name__ == "__main__":
         default="nearest",
         choices=["nearest", "trilinear"],
         help="interpolation type for upsampling",
+    )
+    parser.add_argument(
+        "--weigh_rarity",
+        type=str,
+        default="False",
+        help="weight patches by inverse class frequency in the contrastive "
+        "loss to counter class imbalance (True/False)",
     )
     args = parser.parse_args()
     main(args)

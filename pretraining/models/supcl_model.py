@@ -52,6 +52,7 @@ class SupPatchNCELoss(nn.Module):
         self.mask_dtype = torch.bool
 
         self.temperature = self.opt.nce_T
+        self.weigh_rarity = self.opt.weigh_rarity
         self._cosine_similarity = torch.nn.CosineSimilarity(dim=-1)
 
     def _compute_similarity(self, x, y):
@@ -143,6 +144,11 @@ class SupPatchNCELoss(nn.Module):
         # tile mask
         mask = mask.repeat(anchor_count, contrast_count)
 
+        # Per-anchor class frequency: the same-class mask still includes the
+        # self entry here, so its row-sum counts the patches sharing each
+        # anchor's class (always >= 1). Captured before self is masked out.
+        class_counts = mask.sum(1)
+
         # mask-out self-contrast cases
         logits_mask = torch.scatter(
             torch.ones_like(mask),
@@ -169,7 +175,15 @@ class SupPatchNCELoss(nn.Module):
 
         # loss
         loss = -mean_log_prob_pos
-        loss = loss.view(ntps, num_patches).mean()
+        if self.weigh_rarity:
+            # Rarity weighting: weight each anchor by the inverse frequency of
+            # its class (like class weighting in imbalanced cross-entropy) so
+            # majority classes (e.g. background) don't dominate the loss. The
+            # weighted mean keeps the loss on the same scale as the plain mean.
+            w = 1.0 / class_counts
+            loss = (w * loss).sum() / w.sum()
+        else:
+            loss = loss.view(ntps, num_patches).mean()
 
         return loss
 
@@ -253,6 +267,15 @@ class SupCLModel(BaseModel):
         )
         parser.add_argument(
             "--nce_T", type=float, default=0.07, help="temperature for NCE loss"
+        )
+        parser.add_argument(
+            "--weigh_rarity",
+            type=util.str2bool,
+            nargs="?",
+            const=True,
+            default=False,
+            help="weight each patch by the inverse frequency of its class so "
+            "rare labels are not dominated by majority classes (e.g. background)",
         )
         parser.add_argument(
             "--num_patches",
