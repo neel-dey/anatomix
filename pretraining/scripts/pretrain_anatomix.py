@@ -60,6 +60,7 @@ def main(args):
         "--interp_type", str(args.interp_type),
         "--pool_type", str(args.pool_type),
         "--weigh_rarity", str(args.weigh_rarity),
+        "--balance_denominator", str(args.balance_denominator),
     ]
     print("Running command:\n" + " ".join(shlex.quote(x) for x in cmd))
     subprocess.run(cmd, check=True)
@@ -389,6 +390,13 @@ if __name__ == "__main__":
         default="False",
         help="weight patches by inverse class frequency in the contrastive "
         "loss to counter class imbalance (True/False)",
+    )
+    parser.add_argument(
+        "--balance_denominator",
+        type=str,
+        default="False",
+        help="balance the contrastive denominator (BCL-style) so every class "
+        "contributes equal repulsion mass regardless of patch count (True/False)",
     )
     args = parser.parse_args()
     main(args)

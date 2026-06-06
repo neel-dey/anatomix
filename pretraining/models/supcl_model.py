@@ -53,15 +53,21 @@ class SupPatchNCELoss(nn.Module):
 
         self.temperature = self.opt.nce_T
         self.weigh_rarity = self.opt.weigh_rarity
+        self.balance_denominator = self.opt.balance_denominator
         self._cosine_similarity = torch.nn.CosineSimilarity(dim=-1)
 
     def _compute_similarity(self, x, y):
         assert x.size() == y.size(), f"wrong shape {x.size()} and {y.size()}"
-        v = self._cosine_similarity(x.unsqueeze(1), y.unsqueeze(0))
-        # x shape: (N, 1, C)
-        # y shape: (1, N, C)
-        # v shape: (N, N)
-        return v
+        # Cosine similarity as a Gram matrix: L2-normalize the rows, then matmul.
+        # This is numerically identical to
+        #     CosineSimilarity(x.unsqueeze(1), y.unsqueeze(0))
+        # but avoids materializing the (N, N, C) broadcast product, which is
+        # O(N^2 * C) memory (16 GiB at N=4096, C=256 and the source of the OOM).
+        # The matmul keeps the graph at O(N^2): its backward is two matmuls and
+        # never forms the (N, N, C) intermediate.
+        x = F.normalize(x, dim=-1, eps=1e-8)
+        y = F.normalize(y, dim=-1, eps=1e-8)
+        return x @ y.t()  # (N, C) @ (C, N) -> (N, N)
 
     def forward(
         self, features, labels_seg, labels_coords, coords_range, debug=False
@@ -156,17 +162,40 @@ class SupPatchNCELoss(nn.Module):
             torch.arange(num_patches * anchor_count).view(-1, 1).to(device),
             0,
         )
+        # Same-class indicator (incl. the diagonal) BEFORE self is zeroed out;
+        # needed to size each class for the balanced denominator below.
+        same_class = mask
         mask = mask * logits_mask
 
-        # compute log_prob
-        exp_logits = torch.exp(logits) * logits_mask
-
-        # TODO: replace the 2nd term with torch.logsumexp
-        # (no need for exp_logits then but replace with logits*logits_mask)
-        # Random note: 2nd term is the denominator. whether to remove the positives
-        # from the denominator is an open issue IMO
-        # https://github.com/HobbitLong/SupContrast/issues/64#issuecomment-1182845137
-        log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
+        # compute log_prob (denominator includes positives, see link below)
+        if self.balance_denominator:
+            # Balanced (BCL-style) denominator: weight each contrast item by the
+            # inverse size of *its own* class (self excluded) so every class
+            # contributes equal mass to the partition function regardless of how
+            # many patches it has. This balances the *repulsion* across classes
+            # (the gradient-relevant term), whereas weigh_rarity only balances
+            # the outer per-anchor average (the attraction term). Ref: Balanced
+            # Contrastive Learning, Zhu et al., CVPR 2022.
+            #
+            # n_per_class[i, a] = # items of class(a) valid for anchor i:
+            #   class_counts[a] - 1 if a shares i's class else class_counts[a]
+            # (always >= 1, since every class spans both views).
+            n_per_class = class_counts.unsqueeze(0) - same_class
+            # log-weights; log(0) = -inf at self -> dropped inside logsumexp.
+            # logsumexp(logits + log_w) is the stable form of
+            # log(sum_a w_a exp(logits_a)).
+            log_w = torch.log(logits_mask / n_per_class)
+            log_prob = logits - torch.logsumexp(
+                logits + log_w, dim=1, keepdim=True
+            )
+        else:
+            # TODO: replace the 2nd term with torch.logsumexp
+            # (no need for exp_logits then but replace with logits*logits_mask)
+            # Random note: 2nd term is the denominator. whether to remove the positives
+            # from the denominator is an open issue IMO
+            # https://github.com/HobbitLong/SupContrast/issues/64#issuecomment-1182845137
+            exp_logits = torch.exp(logits) * logits_mask
+            log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
 
         # compute mean of log-likelihood over positives
         # TODO: fix an edge case
@@ -276,6 +305,17 @@ class SupCLModel(BaseModel):
             default=False,
             help="weight each patch by the inverse frequency of its class so "
             "rare labels are not dominated by majority classes (e.g. background)",
+        )
+        parser.add_argument(
+            "--balance_denominator",
+            type=util.str2bool,
+            nargs="?",
+            const=True,
+            default=False,
+            help="balance the contrastive denominator (BCL-style): average "
+            "exp-similarities within each class so every class contributes "
+            "equal repulsion mass regardless of patch count. Complements "
+            "--weigh_rarity (which only balances the outer anchor average).",
         )
         parser.add_argument(
             "--num_patches",
