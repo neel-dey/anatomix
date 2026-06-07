@@ -54,6 +54,7 @@ class SupPatchNCELoss(nn.Module):
         self.temperature = self.opt.nce_T
         self.weigh_rarity = self.opt.weigh_rarity
         self.balance_denominator = self.opt.balance_denominator
+        self.weighting_mode = self.opt.weighting_mode
         self._cosine_similarity = torch.nn.CosineSimilarity(dim=-1)
 
     def _compute_similarity(self, x, y):
@@ -181,6 +182,11 @@ class SupPatchNCELoss(nn.Module):
             #   class_counts[a] - 1 if a shares i's class else class_counts[a]
             # (always >= 1, since every class spans both views).
             n_per_class = class_counts.unsqueeze(0) - same_class
+            # 'sqrt' softens the imbalance correction (inverse sqrt-count
+            # instead of inverse count) so majority classes are not as heavily
+            # down-weighted; 'raw' (default) leaves the counts untouched.
+            if self.weighting_mode == "sqrt":
+                n_per_class = n_per_class.sqrt()
             # log-weights; log(0) = -inf at self -> dropped inside logsumexp.
             # logsumexp(logits + log_w) is the stable form of
             # log(sum_a w_a exp(logits_a)).
@@ -209,7 +215,10 @@ class SupPatchNCELoss(nn.Module):
             # its class (like class weighting in imbalanced cross-entropy) so
             # majority classes (e.g. background) don't dominate the loss. The
             # weighted mean keeps the loss on the same scale as the plain mean.
-            w = 1.0 / class_counts
+            # 'sqrt' (vs the default 'raw') uses inverse sqrt-count weights, a
+            # softer correction that avoids under-emphasizing majority classes.
+            counts = class_counts.sqrt() if self.weighting_mode == "sqrt" else class_counts
+            w = 1.0 / counts
             loss = (w * loss).sum() / w.sum()
         else:
             loss = loss.view(ntps, num_patches).mean()
@@ -316,6 +325,17 @@ class SupCLModel(BaseModel):
             "exp-similarities within each class so every class contributes "
             "equal repulsion mass regardless of patch count. Complements "
             "--weigh_rarity (which only balances the outer anchor average).",
+        )
+        parser.add_argument(
+            "--weighting_mode",
+            type=str,
+            default="raw",
+            choices=["raw", "sqrt"],
+            help="how class counts map to rarity weights for --weigh_rarity / "
+            "--balance_denominator: 'raw' uses inverse raw counts (default), "
+            "'sqrt' uses inverse sqrt counts (a softer correction that avoids "
+            "under-emphasizing majority classes). No effect unless one of "
+            "those flags is set.",
         )
         parser.add_argument(
             "--num_patches",
