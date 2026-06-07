@@ -240,8 +240,8 @@ for epoch in range(
         if len(opt.gpu_ids) > 0:
             torch.cuda.synchronize()
         del data
-        if len(opt.gpu_ids) > 0:
-            torch.cuda.empty_cache()
+        #if len(opt.gpu_ids) > 0:
+        #    torch.cuda.empty_cache()
 
         optimize_time = (
             (time.time() - optimize_start_time) / batch_size * 0.005

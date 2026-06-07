@@ -59,6 +59,9 @@ def main(args):
         "--apply_same_inten_augment", str(args.apply_same_inten_augment),
         "--interp_type", str(args.interp_type),
         "--pool_type", str(args.pool_type),
+        "--weigh_rarity", str(args.weigh_rarity),
+        "--balance_denominator", str(args.balance_denominator),
+        "--weighting_mode", args.weighting_mode,
     ]
     print("Running command:\n" + " ".join(shlex.quote(x) for x in cmd))
     subprocess.run(cmd, check=True)
@@ -381,6 +384,30 @@ if __name__ == "__main__":
         default="nearest",
         choices=["nearest", "trilinear"],
         help="interpolation type for upsampling",
+    )
+    parser.add_argument(
+        "--weigh_rarity",
+        type=str,
+        default="False",
+        help="weight patches by inverse class frequency in the contrastive "
+        "loss to counter class imbalance (True/False)",
+    )
+    parser.add_argument(
+        "--balance_denominator",
+        type=str,
+        default="False",
+        help="balance the contrastive denominator (BCL-style) so every class "
+        "contributes equal repulsion mass regardless of patch count (True/False)",
+    )
+    parser.add_argument(
+        "--weighting_mode",
+        type=str,
+        default="raw",
+        choices=["raw", "sqrt"],
+        help="how class counts map to rarity weights for --weigh_rarity / "
+        "--balance_denominator: 'raw' (inverse counts, default) or 'sqrt' "
+        "(inverse sqrt counts, a softer correction). No effect unless one of "
+        "those flags is set.",
     )
     args = parser.parse_args()
     main(args)

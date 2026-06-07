@@ -52,15 +52,23 @@ class SupPatchNCELoss(nn.Module):
         self.mask_dtype = torch.bool
 
         self.temperature = self.opt.nce_T
+        self.weigh_rarity = self.opt.weigh_rarity
+        self.balance_denominator = self.opt.balance_denominator
+        self.weighting_mode = self.opt.weighting_mode
         self._cosine_similarity = torch.nn.CosineSimilarity(dim=-1)
 
     def _compute_similarity(self, x, y):
         assert x.size() == y.size(), f"wrong shape {x.size()} and {y.size()}"
-        v = self._cosine_similarity(x.unsqueeze(1), y.unsqueeze(0))
-        # x shape: (N, 1, C)
-        # y shape: (1, N, C)
-        # v shape: (N, N)
-        return v
+        # Cosine similarity as a Gram matrix: L2-normalize the rows, then matmul.
+        # This is numerically identical to
+        #     CosineSimilarity(x.unsqueeze(1), y.unsqueeze(0))
+        # but avoids materializing the (N, N, C) broadcast product, which is
+        # O(N^2 * C) memory (16 GiB at N=4096, C=256 and the source of the OOM).
+        # The matmul keeps the graph at O(N^2): its backward is two matmuls and
+        # never forms the (N, N, C) intermediate.
+        x = F.normalize(x, dim=-1, eps=1e-8)
+        y = F.normalize(y, dim=-1, eps=1e-8)
+        return x @ y.t()  # (N, C) @ (C, N) -> (N, N)
 
     def forward(
         self, features, labels_seg, labels_coords, coords_range, debug=False
@@ -143,6 +151,11 @@ class SupPatchNCELoss(nn.Module):
         # tile mask
         mask = mask.repeat(anchor_count, contrast_count)
 
+        # Per-anchor class frequency: the same-class mask still includes the
+        # self entry here, so its row-sum counts the patches sharing each
+        # anchor's class (always >= 1). Captured before self is masked out.
+        class_counts = mask.sum(1)
+
         # mask-out self-contrast cases
         logits_mask = torch.scatter(
             torch.ones_like(mask),
@@ -150,17 +163,45 @@ class SupPatchNCELoss(nn.Module):
             torch.arange(num_patches * anchor_count).view(-1, 1).to(device),
             0,
         )
+        # Same-class indicator (incl. the diagonal) BEFORE self is zeroed out;
+        # needed to size each class for the balanced denominator below.
+        same_class = mask
         mask = mask * logits_mask
 
-        # compute log_prob
-        exp_logits = torch.exp(logits) * logits_mask
-
-        # TODO: replace the 2nd term with torch.logsumexp
-        # (no need for exp_logits then but replace with logits*logits_mask)
-        # Random note: 2nd term is the denominator. whether to remove the positives
-        # from the denominator is an open issue IMO
-        # https://github.com/HobbitLong/SupContrast/issues/64#issuecomment-1182845137
-        log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
+        # compute log_prob (denominator includes positives, see link below)
+        if self.balance_denominator:
+            # Balanced (BCL-style) denominator: weight each contrast item by the
+            # inverse size of *its own* class (self excluded) so every class
+            # contributes equal mass to the partition function regardless of how
+            # many patches it has. This balances the *repulsion* across classes
+            # (the gradient-relevant term), whereas weigh_rarity only balances
+            # the outer per-anchor average (the attraction term). Ref: Balanced
+            # Contrastive Learning, Zhu et al., CVPR 2022.
+            #
+            # n_per_class[i, a] = # items of class(a) valid for anchor i:
+            #   class_counts[a] - 1 if a shares i's class else class_counts[a]
+            # (always >= 1, since every class spans both views).
+            n_per_class = class_counts.unsqueeze(0) - same_class
+            # 'sqrt' softens the imbalance correction (inverse sqrt-count
+            # instead of inverse count) so majority classes are not as heavily
+            # down-weighted; 'raw' (default) leaves the counts untouched.
+            if self.weighting_mode == "sqrt":
+                n_per_class = n_per_class.sqrt()
+            # log-weights; log(0) = -inf at self -> dropped inside logsumexp.
+            # logsumexp(logits + log_w) is the stable form of
+            # log(sum_a w_a exp(logits_a)).
+            log_w = torch.log(logits_mask / n_per_class)
+            log_prob = logits - torch.logsumexp(
+                logits + log_w, dim=1, keepdim=True
+            )
+        else:
+            # TODO: replace the 2nd term with torch.logsumexp
+            # (no need for exp_logits then but replace with logits*logits_mask)
+            # Random note: 2nd term is the denominator. whether to remove the positives
+            # from the denominator is an open issue IMO
+            # https://github.com/HobbitLong/SupContrast/issues/64#issuecomment-1182845137
+            exp_logits = torch.exp(logits) * logits_mask
+            log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
 
         # compute mean of log-likelihood over positives
         # TODO: fix an edge case
@@ -169,7 +210,18 @@ class SupPatchNCELoss(nn.Module):
 
         # loss
         loss = -mean_log_prob_pos
-        loss = loss.view(ntps, num_patches).mean()
+        if self.weigh_rarity:
+            # Rarity weighting: weight each anchor by the inverse frequency of
+            # its class (like class weighting in imbalanced cross-entropy) so
+            # majority classes (e.g. background) don't dominate the loss. The
+            # weighted mean keeps the loss on the same scale as the plain mean.
+            # 'sqrt' (vs the default 'raw') uses inverse sqrt-count weights, a
+            # softer correction that avoids under-emphasizing majority classes.
+            counts = class_counts.sqrt() if self.weighting_mode == "sqrt" else class_counts
+            w = 1.0 / counts
+            loss = (w * loss).sum() / w.sum()
+        else:
+            loss = loss.view(ntps, num_patches).mean()
 
         return loss
 
@@ -253,6 +305,37 @@ class SupCLModel(BaseModel):
         )
         parser.add_argument(
             "--nce_T", type=float, default=0.07, help="temperature for NCE loss"
+        )
+        parser.add_argument(
+            "--weigh_rarity",
+            type=util.str2bool,
+            nargs="?",
+            const=True,
+            default=False,
+            help="weight each patch by the inverse frequency of its class so "
+            "rare labels are not dominated by majority classes (e.g. background)",
+        )
+        parser.add_argument(
+            "--balance_denominator",
+            type=util.str2bool,
+            nargs="?",
+            const=True,
+            default=False,
+            help="balance the contrastive denominator (BCL-style): average "
+            "exp-similarities within each class so every class contributes "
+            "equal repulsion mass regardless of patch count. Complements "
+            "--weigh_rarity (which only balances the outer anchor average).",
+        )
+        parser.add_argument(
+            "--weighting_mode",
+            type=str,
+            default="raw",
+            choices=["raw", "sqrt"],
+            help="how class counts map to rarity weights for --weigh_rarity / "
+            "--balance_denominator: 'raw' uses inverse raw counts (default), "
+            "'sqrt' uses inverse sqrt counts (a softer correction that avoids "
+            "under-emphasizing majority classes). No effect unless one of "
+            "those flags is set.",
         )
         parser.add_argument(
             "--num_patches",
