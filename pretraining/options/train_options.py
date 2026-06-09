@@ -85,6 +85,14 @@ class TrainOptions(BaseOptions):
             default=None,
             help="resume training from another checkpoint",
         )
+        parser.add_argument(
+            "--pretrained_G_only_ckpt",
+            type=str,
+            default=None,
+            help="warm-start only the base network (netG/UNet) from a specific "
+            ".pth file; the MLP head (netF) stays randomly initialized. The "
+            "checkpoint must match the configured netG architecture.",
+        )
 
         # training parameters
         parser.add_argument(

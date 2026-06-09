@@ -52,6 +52,8 @@ def main(args):
         "--max_norm_F", str(args.max_norm_F),
         "--continue_train", str(args.continue_train),
         "--max_iters", str(args.max_iters),
+        "--pretrained_name", str(args.pretrained_name),
+        "--pretrained_G_only_ckpt", str(args.pretrained_G_only_ckpt),
         "--gpu_ids", str(args.gpu_ids),
         "--nce_layers", args.nce_layers,
         "--nce_weights", args.nce_weights,
@@ -340,6 +342,22 @@ if __name__ == "__main__":
         type=int,
         default=0,
         help="hard cap on total_iters; 0 disables. Useful for smoke tests.",
+    )
+    parser.add_argument(
+        "--pretrained_name",
+        type=str,
+        default="None",
+        help="warm-start network weights from another run's checkpoint dir "
+             "(loads <ckpt_dir>/<pretrained_name>/<epoch>_net_{G,F}.pth). "
+             "'None' disables. Mutually exclusive with --continue_train."
+    )
+    parser.add_argument(
+        "--pretrained_G_only_ckpt",
+        type=str,
+        default="None",
+        help="warm-start only the base network (netG/UNet) from a specific "
+             ".pth file; the MLP head (netF) stays randomly initialized. "
+             "'None' disables.",
     )
     parser.add_argument(
         "--gpu_ids",

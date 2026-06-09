@@ -116,16 +116,30 @@ class BaseModel(ABC):
                 for optimizer in self.optimizers
             ]
 
-        # Two distinct load paths:
-        # - continue_train: resume the *same* run from its save_dir (weights
-        #   here; optimizer/scheduler/scaler restored by load_training_state).
-        # - pretrained_name: warm-start weights from a *different* run; do
-        #   NOT touch optimizer/scheduler/scaler.
+        # Three mutually exclusive load paths, in strict precedence order
+        # (the elif chain below enforces this; only the first match applies):
+        #   1. continue_train: resume the *same* run from its save_dir (weights
+        #      here; optimizer/scheduler/scaler restored by load_training_state).
+        #   2. pretrained_name: warm-start G+F weights from a *different* run's
+        #      checkpoint dir; do NOT touch optimizer/scheduler/scaler.
+        #   3. pretrained_G_only_ckpt: warm-start *only* netG from a standalone
+        #      .pth; netF stays randomly initialized.
         # Inference always loads weights from save_dir.
+        #
+        # Precedence matters for the typical "seed a fresh run, then resume it"
+        # workflow: pass --continue_train alongside --pretrained_G_only_ckpt and
+        # the first launch finds no latest_train_state.pth, so continue_train
+        # auto-disables (see trainers/train.py) and the G-only ckpt seeds netG;
+        # later launches resume via continue_train and ignore the G-only ckpt.
         if not self.isTrain or opt.continue_train:
             self.load_networks(opt.epoch, from_pretrained=False)
         elif opt.pretrained_name is not None and opt.pretrained_name != "None":
             self.load_networks(opt.epoch, from_pretrained=True)
+        elif (
+            opt.pretrained_G_only_ckpt is not None
+            and opt.pretrained_G_only_ckpt != "None"
+        ):
+            self.load_G_only(opt.pretrained_G_only_ckpt)
 
         self.print_networks(opt.verbose)
 
@@ -316,6 +330,31 @@ class BaseModel(ABC):
                     )
                     net.load_state_dict(model_dict)
                     print("Partial network initialized")
+
+    def load_G_only(self, ckpt_path):
+        """Warm-start only the base network (netG) from a standalone .pth file.
+
+        The MLP head (netF) is left randomly initialized. Used by
+        --pretrained_G_only_ckpt to seed a fresh run's UNet from a checkpoint
+        that holds only the G network, assumed to match the configured netG
+        architecture.
+
+        Parameters:
+            ckpt_path (str) -- path to a .pth file holding netG's state_dict.
+        """
+        net = self.netG
+        if isinstance(net, torch.nn.DataParallel):
+            net = net.module
+        print("loading netG only from %s" % ckpt_path)
+        state_dict = torch.load(ckpt_path, map_location=str(self.device))
+        first_key = list(state_dict.keys())[0]
+        # Strip DataParallel (module.) / torch.compile (_orig_mod.) prefixes,
+        # mirroring load_networks so any checkpoint shape loads cleanly.
+        if "module." in first_key or "_orig_mod." in first_key:
+            state_dict = self.convert_dict(state_dict)
+        if hasattr(state_dict, "_metadata"):
+            del state_dict._metadata
+        net.load_state_dict(state_dict)
 
     def save_training_state(self, extras):
         """Save optimizer/scheduler/scaler state plus caller-supplied extras
