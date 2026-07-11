@@ -7,9 +7,11 @@ nilearn
 h5py
 matplotlib
 torchio
-torch==2.8.0
+torch==2.13.0
+torchvision==0.28.0
 monai
 tensorboard
 tqdm
 natsort
 huggingface_hub
+dynamic-network-architectures
