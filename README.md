@@ -82,14 +82,15 @@ conda create -n anatomix python=3.11
 conda activate anatomix
 git clone https://github.com/neel-dey/anatomix.git
 cd anatomix
-pip install -e .
+./install.sh   # auto-detects CUDA: cu126 default, cu130 for CUDA-13 drivers, cpu if no GPU
 ```
 
 Or install the dependencies manually:
 ```
 conda create -n anatomix python=3.11
 conda activate anatomix
-pip install numpy nibabel scipy scikit-image nilearn h5py matplotlib torch==2.8.0 tensorboard tqdm monai torchio SimpleITK natsort huggingface_hub
+# change the cuda wheel to `cu130` if you're on CUDA13 or `cpu` if you're doing cpu-only
+pip install numpy nibabel scipy scikit-image nilearn h5py matplotlib tensorboard tqdm monai torchio SimpleITK natsort huggingface_hub dynamic-network-architectures torch==2.13.0 torchvision==0.28.0 --extra-index-url https://download.pytorch.org/whl/cu126
 ```
 
 ## Folder organization
