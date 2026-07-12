@@ -104,8 +104,6 @@ class BaseOptions:
             choices=["noiseunet", "noskipunet", "unet", "primus"],
             help="specify base network architecture",
         )
-        # 3D ViT (Primus) parameters; only used when --netG primus. Kept in a
-        # separate module so this core CLI stays readable (see primus_options.py).
         parser = add_primus_arguments(parser)
         parser.add_argument(
             "--normG",

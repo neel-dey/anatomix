@@ -1,7 +1,11 @@
 import argparse
+import os
 import subprocess
 import sys
 import shlex
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from options.primus_options import add_primus_arguments
 
 
 def main(args):
@@ -436,65 +440,6 @@ if __name__ == "__main__":
         "(inverse sqrt counts, a softer correction). No effect unless one of "
         "those flags is set.",
     )
-    # 3D ViT params; only used when --netG primus
-    parser.add_argument(
-        "--primus_version",
-        type=str,
-        default="v1",
-        choices=["v1", "v2"],
-        help="v1 (single-conv patch embed) or v2 (deeper residual; requires "
-        "--primus_patch_size 8)",
-    )
-    parser.add_argument(
-        "--primus_config",
-        type=str,
-        default="B",
-        choices=["S", "B", "M", "L"],
-        help="ViT scale (depth/heads/embed_dim)",
-    )
-    parser.add_argument(
-        "--primus_patch_size",
-        type=int,
-        default=8,
-        help="Tokenizer patch size (crop_size must be divisible by it)",
-    )
-    parser.add_argument(
-        "--primus_drop_path_rate",
-        type=float,
-        default=0.0,
-        help="Stochastic-depth (DropPath) rate",
-    )
-    parser.add_argument(
-        "--primus_num_register_tokens",
-        type=int,
-        default=0,
-        help="Number of ViT register tokens (0 disables; only for --netG primus)",
-    )
-    parser.add_argument(
-        "--primus_v2_in_eps",
-        type=float,
-        default=1e-5,
-        help="v2 deeper-tokenizer InstanceNorm3d eps (v2 only); also the "
-        "--primus_out_norm eps",
-    )
-    parser.add_argument(
-        "--primus_qk_norm",
-        type=str,
-        default="False",
-        help="Enable QK-norm in the ViT attention. Only for --netG primus.",
-    )
-    parser.add_argument(
-        "--primus_out_norm",
-        type=str,
-        default="False",
-        help="Output spatial norm: none|instance|demean|layernorm|layernorm_affine "
-        "(eps = --primus_v2_in_eps). Only for --netG primus.",
-    )
-    parser.add_argument(
-        "--primus_register_init_std",
-        type=float,
-        default=0.02,
-        help="Init std for register tokens (upstream 1e-6).",
-    )
+    parser = add_primus_arguments(parser)
     args = parser.parse_args()
     main(args)

@@ -265,21 +265,13 @@ class BaseModel(ABC):
                     torch.save(net.cpu().state_dict(), save_path)
 
     def _output_head_keys(self, net, keys):
-        """Keys of ``net``'s output projection -- the only params a shape-mismatched
-        warm-start may leave at fresh init (e.g. a different output_nc). Empty set
-        when the head can't be identified, so load_networks refuses rather than
-        silently reinitializing critical weights (e.g. positional embeddings).
-        """
+        """Return output-head keys that a partial warm start may reinitialize."""
         core = getattr(net, "_orig_mod", net)  # unwrap torch.compile
         core = getattr(core, "module", core)   # unwrap DataParallel
 
         if hasattr(core, "up_projection"):
-            # 3D ViT: the PatchDecode output head.
             head = "up_projection."
         else:
-            # UNet: all layers live in one nn.Sequential `model`; the output head
-            # is the highest-indexed direct child that owns parameters (the
-            # final conv).
             seq = getattr(core, "model", None)
             if not isinstance(seq, torch.nn.Sequential):
                 return set()
@@ -345,11 +337,7 @@ class BaseModel(ABC):
                 try:
                     net.load_state_dict(state_dict)
                 except RuntimeError as e:
-                    # Strict load failed. Tolerate ONLY a differently shaped output
-                    # head (e.g. warm-starting across a different output_nc); leave
-                    # those at fresh init. Any other mismatch -- e.g. a pos-embed /
-                    # register-token change (--primus_num_register_tokens reshapes
-                    # eva.pos_embed) -- must NOT be silently reinitialized, so re-raise.
+                    # A partial warm start may differ only in its output head.
                     model_dict = net.state_dict()
                     ckpt_keys, model_keys = set(state_dict), set(model_dict)
 
@@ -358,8 +346,8 @@ class BaseModel(ABC):
                         for k in (ckpt_keys & model_keys)
                         if state_dict[k].size() != model_dict[k].size()
                     )
-                    missing = sorted(model_keys - ckpt_keys)  # in model, not ckpt
-                    unexpected = sorted(ckpt_keys - model_keys)  # in ckpt, not model
+                    missing = sorted(model_keys - ckpt_keys)
+                    unexpected = sorted(ckpt_keys - model_keys)
 
                     allowed = self._output_head_keys(net, model_keys)
                     offenders = sorted(
@@ -376,8 +364,6 @@ class BaseModel(ABC):
                             f"unexpected_in_ckpt={unexpected})"
                         ) from e
 
-                    # Only output-head params differ: copy every shape-matching
-                    # tensor and leave the output head at its fresh init.
                     for k in ckpt_keys & model_keys:
                         if state_dict[k].size() == model_dict[k].size():
                             model_dict[k] = state_dict[k]
@@ -503,4 +489,3 @@ class BaseModel(ABC):
             if net is not None:
                 for param in net.parameters():
                     param.requires_grad = requires_grad
-

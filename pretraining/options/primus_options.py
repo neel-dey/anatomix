@@ -1,18 +1,11 @@
-"""Primus (3D ViT) command-line arguments.
-
-Split out of ``base_options.py`` so the core CLI stays readable; every option
-here is only consulted when ``--netG primus``. ``add_primus_arguments`` is
-called once from ``BaseOptions.initialize``.
-"""
+"""Command-line options for Primus models."""
 import argparse
 
 from util import util
 
 
 def primus_out_norm_mode(v):
-    """Parse ``--primus_out_norm`` to none|instance|demean|layernorm|layernorm_affine
-    (see anatomix/model/vit3d build_out_norm). Bools accepted: true->instance,
-    false->none."""
+    """Parse output normalization names and legacy boolean values."""
     s = str(v).strip().lower()
     if s in ("instance", "instancenorm", "in"):
         return "instance"
@@ -35,8 +28,7 @@ def primus_out_norm_mode(v):
 
 
 def add_primus_arguments(parser):
-    """Register the ``--primus_*`` 3D ViT options on ``parser`` and return it.
-    Only used when ``--netG primus``."""
+    """Add Primus options to an argument parser."""
     parser.add_argument(
         "--primus_version",
         type=str,

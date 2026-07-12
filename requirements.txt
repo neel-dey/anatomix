@@ -2,7 +2,6 @@ numpy
 nibabel
 scipy
 scikit-image
-scikit-learn
 simpleitk
 nilearn
 h5py
@@ -15,4 +14,4 @@ tensorboard
 tqdm
 natsort
 huggingface_hub
-dynamic-network-architectures
+dynamic-network-architectures==0.4.4

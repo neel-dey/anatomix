@@ -398,15 +398,9 @@ class SupCLModel(BaseModel):
                 ]
             else:
                 self.nce_weights = []
-        # nce_layers and nce_weights must align; mismatched lengths are a user
-        # error and should fail loudly (enforced for every architecture).
         assert len(self.nce_weights) == len(self.nce_layers)
 
-        # The 3D ViT is single-resolution (one token grid; only the decoder
-        # upsamples), so NCE runs on its single final feature map. The CLI
-        # nce_layers/nce_weights (which index UNet layers) are validated above but
-        # forced to a single entry here; -1 is just the log label (forward()
-        # bypasses nce_layers for this path).
+        # Primus exposes one feature scale for NCE.
         if opt.netG == "primus":
             self.nce_layers = [-1]
             self.nce_weights = [1.0]
@@ -568,15 +562,17 @@ class SupCLModel(BaseModel):
                 self.label_subjid = self.label_subjid[:bs_per_gpu]
                 """
 
-                # autocast (matching optimize_parameters) so this one-off init
-                # fwd/bwd doesn't OOM in fp32 for large ViT configs. The init
-                # backward is throwaway (grads zeroed before the first real step),
-                # so it's inert and harmless for the UNet path too.
-                if torch.cuda.is_bf16_supported():
-                    amp_dtype = torch.bfloat16
+                if self.opt.netG == "primus":
+                    # Large Primus configs need the same autocast used for training.
+                    amp_dtype = (
+                        torch.bfloat16
+                        if torch.cuda.is_bf16_supported()
+                        else torch.float16
+                    )
+                    with torch.amp.autocast(device_type="cuda", dtype=amp_dtype):
+                        self.forward(verbose=False)
+                        loss_G = self.compute_G_loss(0)
                 else:
-                    amp_dtype = torch.float16
-                with torch.amp.autocast(device_type="cuda", dtype=amp_dtype):
                     self.forward(verbose=False)
                     loss_G = self.compute_G_loss(0)
                 loss_G.backward()
@@ -741,14 +737,9 @@ class SupCLModel(BaseModel):
                 self.reals = self.real_A
 
             # Forward pass through base network with NCE layers
-            if self.opt.netG == "primus":
-                # 3D ViT returns one dense feature map = the sole NCE feature.
-                segs = self.netG(self.reals)
-                self.feat_kq = [segs]
-            else:
-                segs, self.feat_kq = self.netG(
-                    self.reals, self.nce_layers, False, verbose=verbose
-                )
+            segs, self.feat_kq = self.netG(
+                self.reals, self.nce_layers, False, verbose=verbose
+            )
 
             # Split predictions for A and B
             self.pred_A = segs[: self.real_A.size(0)]
