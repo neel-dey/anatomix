@@ -1,7 +1,10 @@
 """
-Vendored ``PatchEmbed_deeper`` (PrimusV2's deeper residual tokenizer). The only
-change vs upstream is the configurable InstanceNorm3d eps (``in_eps``); the
-submodule tree matches upstream so state_dicts stay interchangeable.
+Local copy of ``PatchEmbed_deeper`` (PrimusV2's deeper residual tokenizer) from
+MIC-DKFZ ``dynamic-network-architectures`` (see architectures.py for the full
+citation). Copied rather than imported for a single reason: to make the
+InstanceNorm3d eps (``in_eps``) a constructor arg instead of the upstream
+hardcoded 1e-5. The submodule tree matches upstream so state_dicts stay
+interchangeable.
 """
 from typing import Literal
 

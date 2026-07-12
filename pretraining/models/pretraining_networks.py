@@ -119,7 +119,7 @@ def define_G(
         assert nreg >= 0, (
             "primus_num_register_tokens must be >= 0 (got %d)" % nreg
         )
-        # Build the vendored v1 (Primus) / v2 (PrimusV2) from anatomix/model/vit3d,
+        # Build the local v1 (Primus) / v2 (PrimusV2) ViT from anatomix/model/vit3d,
         # applying the stability tricks init_values=0.1 (LayerScale) and
         # scale_attn_inner=True. The defaults (num_register_tokens=0, in_eps=1e-5)
         # match the official state_dict, so existing checkpoints still load.

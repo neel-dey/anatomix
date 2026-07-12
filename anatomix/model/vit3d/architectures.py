@@ -1,12 +1,19 @@
 """
-Vendored Primus / PrimusV2 (v1 / v2) 3D ViT, adapted from
-``dynamic_network_architectures.architectures.primus`` to expose two tokenizer
-knobs as constructor args: ``num_register_tokens`` (ViT register tokens) and
-``in_eps`` (PrimusV2's deeper-tokenizer InstanceNorm3d eps, hardcoded to 1e-5
-upstream). Only the model-definition classes are vendored; heavy blocks (``Eva``,
-``PatchDecode``, RoPE, weight init) come from the installed
-``dynamic_network_architectures`` / ``timm``. The submodule tree matches upstream,
-so checkpoints are interchangeable with the official Primus / PrimusV2.
+Local copy of the Primus / PrimusV2 (v1 / v2) 3D ViT model definitions from
+MIC-DKFZ ``dynamic-network-architectures``
+(https://github.com/MIC-DKFZ/dynamic-network-architectures ->
+``dynamic_network_architectures.architectures.primus``).
+
+Why copied rather than imported: the upstream ``Primus`` / ``PrimusV2`` classes
+hardcode settings we need to sweep -- notably the register tokens
+(``num_register_tokens``) and the deeper-tokenizer InstanceNorm3d eps (``in_eps``,
+1e-5 upstream) -- plus a couple of stability options (QK-norm, output norm).
+Reproducing the (small) class definitions here exposes them as constructor args
+without forking the whole package. Only these definitions are copied; the heavy
+building blocks (``Eva``, ``PatchDecode``, RoPE, weight init) are still imported
+from the installed ``dynamic_network_architectures`` / ``timm``, so the submodule
+tree matches upstream and checkpoints stay interchangeable with the official
+Primus / PrimusV2.
 """
 from typing import Tuple
 
@@ -157,7 +164,7 @@ class Primus(AbstractDynamicNetworkArchitectures):
             scale_attn_inner=scale_attn_inner,
         )
 
-        # QK-norm: the vendored ``Eva`` builder doesn't expose timm's qk_norm, so enable
+        # QK-norm: the upstream ``Eva`` builder doesn't expose timm's qk_norm, so enable
         # it post-hoc by swapping per-head LayerNorm(head_dim) in. Bounds the pre-softmax
         # logits, preventing the attention-sink that injects a spatially-uniform (DC)
         # component -> the per-channel output bias that hijacks argmax. Adds
