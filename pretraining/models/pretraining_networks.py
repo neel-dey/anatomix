@@ -11,6 +11,7 @@ from anatomix.model.network import (
     get_actvn_layer,
     get_norm_layer,
 )
+from anatomix.model import PRIMUS_CONFIGS, Primus, PrimusV2
 
 
 # -------------------------------
@@ -100,6 +101,55 @@ def define_G(
             pooling=pooling,
             interp=interp,
             norm_eps=norm_eps,
+        )
+    elif netG == "primus":
+        # 3D ViT: forward returns a dense (B, output_nc, D, H, W) map -- the same
+        # contract as the UNet output -- so it plugs into the contrastive machinery.
+        ps = opt.primus_patch_size
+        cs = opt.crop_size
+        assert cs % ps == 0, (
+            "crop_size (%d) must be divisible by primus_patch_size (%d)" % (cs, ps)
+        )
+        v2 = opt.primus_version == "v2"
+        assert not (v2 and ps != 8), (
+            "PrimusV2's deeper patch embed is hardwired to an 8x stride; "
+            "use --primus_patch_size 8 with --primus_version v2"
+        )
+        nreg = opt.primus_num_register_tokens
+        assert nreg >= 0, (
+            "primus_num_register_tokens must be >= 0 (got %d)" % nreg
+        )
+        # Build the vendored v1 (Primus) / v2 (PrimusV2) from anatomix/model/vit3d,
+        # applying the stability tricks init_values=0.1 (LayerScale) and
+        # scale_attn_inner=True. The defaults (num_register_tokens=0, in_eps=1e-5)
+        # match the official state_dict, so existing checkpoints still load.
+        conf = PRIMUS_CONFIGS[opt.primus_config]
+        kwargs = dict(
+            input_channels=input_nc,
+            num_classes=output_nc,
+            embed_dim=conf["embed_dim"],
+            eva_depth=conf["eva_depth"],
+            eva_numheads=conf["eva_numheads"],
+            patch_embed_size=(ps, ps, ps),
+            input_shape=(cs, cs, cs),
+            drop_path_rate=opt.primus_drop_path_rate,
+            num_register_tokens=nreg,
+            init_values=0.1,
+            scale_attn_inner=True,
+            # Stability knobs (see anatomix/model/vit3d build_out_norm): QK-norm,
+            # output spatial norm (out_norm_eps = --primus_v2_in_eps), register init.
+            qk_norm=opt.primus_qk_norm,
+            out_norm=opt.primus_out_norm,
+            out_norm_eps=opt.primus_v2_in_eps,
+            register_init_std=opt.primus_register_init_std,
+        )
+        if v2:
+            net = PrimusV2(in_eps=opt.primus_v2_in_eps, **kwargs)
+        else:
+            net = Primus(**kwargs)
+        # ViT self-initializes; initialize_weights=False so init_net doesn't clobber it.
+        return init_net(
+            net, init_type, init_gain, gpu_ids, initialize_weights=False
         )
     else:
         raise NotImplementedError(
