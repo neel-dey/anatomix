@@ -10,6 +10,12 @@ from dynamic_network_architectures.building_blocks.patch_encode_decode import (
 
 
 class PatchEmbedDeeper(PatchEmbed_deeper):
+    """PrimusV2 tokenizer with configurable InstanceNorm epsilon.
+
+    ``in_eps`` sets epsilon on every tokenizer InstanceNorm layer; all other
+    inputs and the output match the upstream ``PatchEmbed_deeper`` class.
+    """
+
     def __init__(
         self,
         input_channels=3,

@@ -318,7 +318,8 @@ if __name__ == "__main__":
         "--netG",
         type=str,
         default="unet",
-        help="specify base network architecture",
+        choices=["unet", "primus"],
+        help="base network architecture",
     )
     parser.add_argument(
         "--grad_accum_iters",
@@ -368,7 +369,7 @@ if __name__ == "__main__":
         "--pretrained_G_only_ckpt",
         type=str,
         default="None",
-        help="warm-start only the base network (netG/UNet) from a specific "
+        help="warm-start only the base network (netG) from a specific "
              ".pth file; the MLP head (netF) stays randomly initialized. "
              "'None' disables.",
     )

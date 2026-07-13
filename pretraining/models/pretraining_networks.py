@@ -50,7 +50,7 @@ def define_G(
     ngf : int
         Number of filters in the first conv layer.
     netG : str
-        The architecture's name: 'unet'.
+        Base architecture: 'unet' or 'primus'.
     norm : str, optional
         The name of normalization layers used in the network: 'batch' | 'instance' | 'none'.
         Default is 'batch'.
@@ -63,7 +63,7 @@ def define_G(
     gpu_ids : list of int, optional
         Which GPUs the network runs on. Default is [].
     opt : object, optional
-        Additional options (not used here).
+        Additional architecture options.
     final_act : str, optional
         Final activation function. Default is 'none'.
     activation : str, optional

@@ -1,7 +1,7 @@
-"""Primus extensions used by Anatomix pretraining.
-
-The base models come from ``dynamic-network-architectures``. These subclasses
-only expose the normalization and register settings used by this project.
+"""This file imports 3D ViT backbones and exposes some configurables that were
+hardcoded in the upstream but might be modified in anatomix pretraining, such
+as normalization and register (ViT) initializations. The base models come from
+``dynamic-network-architectures`` on PyPI.
 """
 
 import torch
@@ -28,24 +28,41 @@ class ChannelDemean(nn.Module):
     """Subtract each channel's spatial mean."""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Center a ``(B, C, D, H, W)`` tensor, preserving its shape."""
         return x - x.mean(dim=(2, 3, 4), keepdim=True)
 
 
 class ChannelLayerNorm(nn.Module):
-    """Apply affine-free layer normalization across channels."""
+    """Apply layer normalization with no learnable affines across channels."""
 
     def __init__(self, eps: float = 1e-5):
         super().__init__()
         self.eps = eps
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Pointwise standardize a ``(B, C, D, H, W)`` tensor over channels"""
         mean = x.mean(dim=1, keepdim=True)
         var = x.var(dim=1, unbiased=False, keepdim=True)
         return (x - mean) / torch.sqrt(var + self.eps)
 
 
 def build_out_norm(mode, num_classes, eps):
-    """Build the requested output normalization layer."""
+    """Build an output normalization layer.
+
+    Parameters
+    ----------
+    mode : str or bool
+        Normalization name; booleans select instance norm or identity.
+    num_classes : int
+        Number of output channels.
+    eps : float
+        Numerical-stability epsilon.
+
+    Returns
+    -------
+    nn.Module
+        The requested normalization layer.
+    """
     if isinstance(mode, bool):
         mode = "instance" if mode else "none"
     mode = (mode or "none").lower()
@@ -63,9 +80,12 @@ def build_out_norm(mode, num_classes, eps):
 
 
 class _PrimusExtensions:
+    """Add anatomix normalization options to upstream Primus models."""
+
     def _configure_extensions(
         self, qk_norm, out_norm, out_norm_eps, register_init_std
     ):
+        """Configure QK/output normalization and register initialization."""
         if qk_norm:
             for block in self.eva.blocks:
                 attention = block.attn
@@ -87,6 +107,23 @@ class _PrimusExtensions:
     def forward(
         self, x, layers=None, encode_only=False, verbose=False, ret_mask=False
     ):
+        """Run Primus and adapt its output for anatomix pretraining.
+
+        Parameters
+        ----------
+        x : torch.Tensor of shape (B, C, D, H, W)
+            Input volume.
+        layers : sequence or bool, optional
+            A nonempty sequence requests the output as a feature; a boolean
+            preserves Primus' positional ``ret_mask`` API.
+        encode_only, verbose, ret_mask : bool, optional
+            Select feature/output-mask modes; ``verbose`` is compatibility-only.
+
+        Returns
+        -------
+        torch.Tensor, list, or tuple
+            Normalized output, requested features, or output-mask pair.
+        """
         # Preserve Primus' positional ``ret_mask`` argument.
         if isinstance(layers, bool):
             ret_mask = layers
@@ -103,7 +140,11 @@ class _PrimusExtensions:
 
 
 class Primus(_PrimusExtensions, _Primus):
-    """Primus with optional QK and output normalization."""
+    """Primus with optional QK and output normalization.
+
+    ``qk_norm`` adds QK LayerNorm; ``out_norm`` and ``out_norm_eps`` configure output.
+    ``register_init_std`` controls register initialization; other inputs go upstream.
+    """
 
     def __init__(
         self,
@@ -121,7 +162,11 @@ class Primus(_PrimusExtensions, _Primus):
 
 
 class PrimusV2(_PrimusExtensions, _PrimusV2):
-    """PrimusV2 with configurable tokenizer epsilon and Primus extensions."""
+    """PrimusV2 with the Primus extensions and configurable tokenizer epsilon.
+
+    ``in_eps`` sets InstanceNorm epsilon in the deeper tokenizer; remaining
+    extension arguments match :class:`Primus` and other arguments are upstream.
+    """
 
     def __init__(
         self,

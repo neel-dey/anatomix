@@ -5,7 +5,18 @@ from util import util
 
 
 def primus_out_norm_mode(v):
-    """Parse output normalization names and legacy boolean values."""
+    """Parse an output-normalization name or legacy boolean value.
+
+    Parameters
+    ----------
+    v : object
+        Value supplied by argparse.
+
+    Returns
+    -------
+    str
+        Canonical normalization mode.
+    """
     s = str(v).strip().lower()
     if s in ("instance", "instancenorm", "in"):
         return "instance"
@@ -28,7 +39,18 @@ def primus_out_norm_mode(v):
 
 
 def add_primus_arguments(parser):
-    """Add Primus options to an argument parser."""
+    """Add Primus options to an argument parser.
+
+    Parameters
+    ----------
+    parser : argparse.ArgumentParser
+        Parser to extend.
+
+    Returns
+    -------
+    argparse.ArgumentParser
+        The same parser with Primus arguments registered.
+    """
     parser.add_argument(
         "--primus_version",
         type=str,

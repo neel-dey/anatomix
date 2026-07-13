@@ -4,6 +4,7 @@ __all__ = ["Unet", "Primus", "PrimusV2", "PRIMUS_CONFIGS"]
 
 
 def __getattr__(name):
+    """Lazily import optional 3D ViT (Primus) symbols."""
     if name in ("Primus", "PrimusV2", "PRIMUS_CONFIGS"):
         from . import vit3d
 

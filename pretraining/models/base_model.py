@@ -265,7 +265,20 @@ class BaseModel(ABC):
                     torch.save(net.cpu().state_dict(), save_path)
 
     def _output_head_keys(self, net, keys):
-        """Return output-head keys that a partial warm start may reinitialize."""
+        """Find output-head keys that a partial warm start may reinitialize.
+
+        Parameters
+        ----------
+        net : torch.nn.Module
+            Base network, optionally wrapped by compile or DataParallel.
+        keys : iterable of str
+            State-dict keys to inspect.
+
+        Returns
+        -------
+        set of str
+            Keys belonging to the network's output head.
+        """
         core = getattr(net, "_orig_mod", net)  # unwrap torch.compile
         core = getattr(core, "module", core)   # unwrap DataParallel
 
