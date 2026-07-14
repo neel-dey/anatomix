@@ -64,7 +64,8 @@ def add_primus_arguments(parser):
         type=str,
         default="B",
         choices=["S", "B", "M", "L"],
-        help="ViT scale: depth/heads/embed_dim.",
+        help="ViT scale as depth/heads/embedding width: S=12/6/396, "
+        "B=12/12/792, M=16/12/864, or L=24/16/1056.",
     )
     parser.add_argument(
         "--primus_patch_size",
@@ -77,14 +78,15 @@ def add_primus_arguments(parser):
         "--primus_drop_path_rate",
         type=float,
         default=0.0,
-        help="Stochastic-depth (DropPath) rate.",
+        help="Maximum probability of skipping a transformer block during "
+        "training; 0 disables stochastic depth.",
     )
     parser.add_argument(
         "--primus_num_register_tokens",
         type=int,
         default=0,
-        help="Number of ViT register tokens; 0 (default) disables them. Only "
-        "used when --netG primus.",
+        help="Number of learned tokens included in attention but discarded "
+        "before decoding; 0 disables them.",
     )
     parser.add_argument(
         "--primus_v2_in_eps",
@@ -109,10 +111,10 @@ def add_primus_arguments(parser):
         const="instance",
         default="none",
         choices=["none", "instance", "demean", "layernorm", "layernorm_affine"],
-        help="Output spatial norm: none|instance|demean|layernorm|layernorm_affine "
-        "(see anatomix/model/vit3d build_out_norm; eps = --primus_v2_in_eps). Only "
-        "layernorm_affine adds params. Bare --primus_out_norm = instance; bools "
-        "accepted (true->instance, false->none).",
+        help="Decoded-volume norm: instance/demean operate spatially per "
+        "channel; layernorm modes operate across channels per voxel; none "
+        "disables. Only layernorm_affine adds parameters. A bare flag or true "
+        "selects instance; false selects none. Uses --primus_v2_in_eps.",
     )
     parser.add_argument(
         "--primus_register_init_std",

@@ -63,7 +63,8 @@ def define_G(
     gpu_ids : list of int, optional
         Which GPUs the network runs on. Default is [].
     opt : object, optional
-        Additional architecture options.
+        Additional architecture options. Primus requires ``crop_size`` and the
+        fields registered by ``add_primus_arguments``.
     final_act : str, optional
         Final activation function. Default is 'none'.
     activation : str, optional
@@ -74,6 +75,8 @@ def define_G(
         Interpolation type. Default is 'nearest'.
     num_downs : int, optional
         Number of downsamples in encoder. Default is 4.
+    norm_eps : float, optional
+        Numerical-stability epsilon for UNet normalization layers.
 
     Returns
     -------

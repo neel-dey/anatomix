@@ -10,10 +10,35 @@ from dynamic_network_architectures.building_blocks.patch_encode_decode import (
 
 
 class PatchEmbedDeeper(PatchEmbed_deeper):
-    """PrimusV2 tokenizer with configurable InstanceNorm epsilon.
+    """Downsample a 3D volume into patch embeddings with convolutional stages.
 
-    ``in_eps`` sets epsilon on every tokenizer InstanceNorm layer; all other
-    inputs and the output match the upstream ``PatchEmbed_deeper`` class.
+    This upstream-compatible PrimusV2 tokenizer only adds configurable
+    InstanceNorm epsilon.
+
+    Parameters
+    ----------
+    input_channels : int, optional
+        Number of channels in the input volume.
+    embed_dim : int, optional
+        Number of channels in the output embedding grid.
+    base_features : int, optional
+        Channel count in the stem and first downsampling stage.
+    depth_per_level : tuple[int, ...], optional
+        Block counts in successive stride-2 stages; its length determines the
+        total downsampling factor, ``2 ** len(depth_per_level)``.
+    embed_proj_3x3x3 : bool, optional
+        Use a 3x3x3 rather than 1x1x1 final embedding projection.
+    embed_block_type : {"basic", "bottleneck"}, optional
+        Residual block type; used only with residual-style stages.
+    embed_block_style : {"residual", "conv"}, optional
+        Build each stage from residual or plain convolutional blocks.
+    in_eps : float, optional
+        Epsilon used by every InstanceNorm3d layer.
+
+    Notes
+    -----
+    The inherited forward maps ``(B, C_in, D, H, W)`` to
+    ``(B, embed_dim, D/s, H/s, W/s)``, where ``s`` is the downsampling factor.
     """
 
     def __init__(
