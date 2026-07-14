@@ -400,6 +400,15 @@ class SupCLModel(BaseModel):
                 self.nce_weights = []
         assert len(self.nce_weights) == len(self.nce_layers)
 
+        # Primus exposes one feature scale for NCE.
+        if opt.netG == "primus":
+            self.nce_layers = [-1]
+            self.nce_weights = [1.0]
+            self.last_layer_to_freeze = -1
+            print(
+                "3D ViT: single-scale NCE on the final feature map (logged as layer -1)"
+            )
+
         self.use_mask = opt.load_mask
 
         # Print NCE configuration if enabled
@@ -553,8 +562,20 @@ class SupCLModel(BaseModel):
                 self.label_subjid = self.label_subjid[:bs_per_gpu]
                 """
 
-                self.forward(verbose=False)
-                self.compute_G_loss(0).backward()
+                if self.opt.netG == "primus":
+                    # Large Primus configs need the same autocast used for training.
+                    amp_dtype = (
+                        torch.bfloat16
+                        if torch.cuda.is_bf16_supported()
+                        else torch.float16
+                    )
+                    with torch.amp.autocast(device_type="cuda", dtype=amp_dtype):
+                        self.forward(verbose=False)
+                        loss_G = self.compute_G_loss(0)
+                else:
+                    self.forward(verbose=False)
+                    loss_G = self.compute_G_loss(0)
+                loss_G.backward()
                 if (
                     self.opt.lambda_NCE > 0.0
                     and self.opt.use_mlp

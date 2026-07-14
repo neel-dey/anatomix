@@ -50,7 +50,7 @@ def define_G(
     ngf : int
         Number of filters in the first conv layer.
     netG : str
-        The architecture's name: 'unet'.
+        Base architecture: 'unet' or 'primus'.
     norm : str, optional
         The name of normalization layers used in the network: 'batch' | 'instance' | 'none'.
         Default is 'batch'.
@@ -63,7 +63,8 @@ def define_G(
     gpu_ids : list of int, optional
         Which GPUs the network runs on. Default is [].
     opt : object, optional
-        Additional options (not used here).
+        Additional architecture options. Primus requires ``crop_size`` and the
+        fields registered by ``add_primus_arguments``.
     final_act : str, optional
         Final activation function. Default is 'none'.
     activation : str, optional
@@ -74,6 +75,8 @@ def define_G(
         Interpolation type. Default is 'nearest'.
     num_downs : int, optional
         Number of downsamples in encoder. Default is 4.
+    norm_eps : float, optional
+        Numerical-stability epsilon for UNet normalization layers.
 
     Returns
     -------
@@ -100,6 +103,48 @@ def define_G(
             pooling=pooling,
             interp=interp,
             norm_eps=norm_eps,
+        )
+    elif netG == "primus":
+        from anatomix.model.vit3d import PRIMUS_CONFIGS, Primus, PrimusV2
+
+        ps = opt.primus_patch_size
+        cs = opt.crop_size
+        assert cs % ps == 0, (
+            "crop_size (%d) must be divisible by primus_patch_size (%d)" % (cs, ps)
+        )
+        v2 = opt.primus_version == "v2"
+        assert not (v2 and ps != 8), (
+            "PrimusV2's deeper patch embed is hardwired to an 8x stride; "
+            "use --primus_patch_size 8 with --primus_version v2"
+        )
+        nreg = opt.primus_num_register_tokens
+        assert nreg >= 0, (
+            "primus_num_register_tokens must be >= 0 (got %d)" % nreg
+        )
+        conf = PRIMUS_CONFIGS[opt.primus_config]
+        kwargs = dict(
+            input_channels=input_nc,
+            num_classes=output_nc,
+            embed_dim=conf["embed_dim"],
+            eva_depth=conf["eva_depth"],
+            eva_numheads=conf["eva_numheads"],
+            patch_embed_size=(ps, ps, ps),
+            input_shape=(cs, cs, cs),
+            drop_path_rate=opt.primus_drop_path_rate,
+            num_register_tokens=nreg,
+            init_values=0.1,
+            scale_attn_inner=True,
+            qk_norm=opt.primus_qk_norm,
+            out_norm=opt.primus_out_norm,
+            out_norm_eps=opt.primus_v2_in_eps,
+            register_init_std=opt.primus_register_init_std,
+        )
+        if v2:
+            net = PrimusV2(in_eps=opt.primus_v2_in_eps, **kwargs)
+        else:
+            net = Primus(**kwargs)
+        return init_net(
+            net, init_type, init_gain, gpu_ids, initialize_weights=False
         )
     else:
         raise NotImplementedError(

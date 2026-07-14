@@ -1,7 +1,11 @@
 import argparse
+import os
 import subprocess
 import sys
 import shlex
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from options.primus_options import add_primus_arguments
 
 
 def main(args):
@@ -64,6 +68,15 @@ def main(args):
         "--weigh_rarity", str(args.weigh_rarity),
         "--balance_denominator", str(args.balance_denominator),
         "--weighting_mode", args.weighting_mode,
+        "--primus_version", str(args.primus_version),
+        "--primus_config", str(args.primus_config),
+        "--primus_patch_size", str(args.primus_patch_size),
+        "--primus_drop_path_rate", str(args.primus_drop_path_rate),
+        "--primus_num_register_tokens", str(args.primus_num_register_tokens),
+        "--primus_v2_in_eps", str(args.primus_v2_in_eps),
+        "--primus_qk_norm", str(args.primus_qk_norm),
+        "--primus_out_norm", str(args.primus_out_norm),
+        "--primus_register_init_std", str(args.primus_register_init_std),
     ]
     print("Running command:\n" + " ".join(shlex.quote(x) for x in cmd))
     subprocess.run(cmd, check=True)
@@ -305,7 +318,8 @@ if __name__ == "__main__":
         "--netG",
         type=str,
         default="unet",
-        help="specify base network architecture",
+        choices=["unet", "primus"],
+        help="base network architecture",
     )
     parser.add_argument(
         "--grad_accum_iters",
@@ -355,7 +369,7 @@ if __name__ == "__main__":
         "--pretrained_G_only_ckpt",
         type=str,
         default="None",
-        help="warm-start only the base network (netG/UNet) from a specific "
+        help="warm-start only the base network (netG) from a specific "
              ".pth file; the MLP head (netF) stays randomly initialized. "
              "'None' disables.",
     )
@@ -427,5 +441,6 @@ if __name__ == "__main__":
         "(inverse sqrt counts, a softer correction). No effect unless one of "
         "those flags is set.",
     )
+    parser = add_primus_arguments(parser)
     args = parser.parse_args()
     main(args)

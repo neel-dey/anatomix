@@ -4,6 +4,8 @@ from util import util
 import models
 import data
 
+from .primus_options import add_primus_arguments
+
 
 class BaseOptions:
     """This class defines options used during both training and test time.
@@ -99,9 +101,10 @@ class BaseOptions:
             "--netG",
             type=str,
             default="unet",
-            choices=["noiseunet", "noskipunet", "unet"],
+            choices=["noiseunet", "noskipunet", "unet", "primus"],
             help="specify base network architecture",
         )
+        parser = add_primus_arguments(parser)
         parser.add_argument(
             "--normG",
             type=str,

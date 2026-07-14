@@ -264,6 +264,44 @@ class BaseModel(ABC):
                 else:
                     torch.save(net.cpu().state_dict(), save_path)
 
+    def _output_head_keys(self, net, keys):
+        """Find output-head keys that a partial warm start may reinitialize.
+
+        Parameters
+        ----------
+        net : torch.nn.Module
+            Base network, optionally wrapped by compile or DataParallel.
+        keys : iterable of str
+            State-dict keys to inspect.
+
+        Returns
+        -------
+        set of str
+            Keys belonging to the network's output head.
+        """
+        core = getattr(net, "_orig_mod", net)  # unwrap torch.compile
+        core = getattr(core, "module", core)   # unwrap DataParallel
+
+        if hasattr(core, "up_projection"):
+            head = "up_projection."
+        else:
+            seq = getattr(core, "model", None)
+            if not isinstance(seq, torch.nn.Sequential):
+                return set()
+            idxs = [
+                int(name)
+                for name, child in seq.named_children()
+                if any(True for _ in child.parameters(recurse=True))
+            ]
+            if not idxs:
+                return set()
+            head = f"model.{max(idxs)}."
+
+        def _strip(k):
+            return k.replace("module.", "").replace("_orig_mod.", "")
+
+        return {k for k in keys if _strip(k).startswith(head)}
+
     def load_networks(self, epoch, from_pretrained=False):
         """Load all the networks from the disk.
 
@@ -311,25 +349,43 @@ class BaseModel(ABC):
 
                 try:
                     net.load_state_dict(state_dict)
-                except:
+                except RuntimeError as e:
+                    # A partial warm start may differ only in its output head.
                     model_dict = net.state_dict()
-                    not_initialized = []
-                    for k, v in state_dict.items():
-                        if v.size() == model_dict[k].size():
-                            model_dict[k] = v
-                        else:
-                            print(
-                                f"mismatch for {k} size: checkpoint size {v.size()}, model size {model_dict[k].size()}"
-                            )
-                            model_dict[k]
-                            not_initialized.append(k)
-                    assert (
-                        len(not_initialized) == 1
-                    ), "only allow for last layer mismatch, found more than 1 param with mismatched shape {}".format(
-                        not_initialized
+                    ckpt_keys, model_keys = set(state_dict), set(model_dict)
+
+                    mismatched = sorted(
+                        k
+                        for k in (ckpt_keys & model_keys)
+                        if state_dict[k].size() != model_dict[k].size()
                     )
+                    missing = sorted(model_keys - ckpt_keys)
+                    unexpected = sorted(ckpt_keys - model_keys)
+
+                    allowed = self._output_head_keys(net, model_keys)
+                    offenders = sorted(
+                        (set(mismatched) | set(missing) | set(unexpected)) - allowed
+                    )
+                    if offenders:
+                        raise RuntimeError(
+                            f"Refusing to partially load '{load_path}': checkpoint "
+                            f"incompatible on non-output-head params: {offenders}. "
+                            f"Usually a different architecture / config -- e.g. a "
+                            f"different --primus_num_register_tokens, which reshapes "
+                            f"eva.pos_embed. Load a matching checkpoint or start fresh. "
+                            f"(shape-mismatched={mismatched}, missing_from_ckpt={missing}, "
+                            f"unexpected_in_ckpt={unexpected})"
+                        ) from e
+
+                    for k in ckpt_keys & model_keys:
+                        if state_dict[k].size() == model_dict[k].size():
+                            model_dict[k] = state_dict[k]
                     net.load_state_dict(model_dict)
-                    print("Partial network initialized")
+                    print(
+                        f"Partial load from '{load_path}': reinitialized output-head "
+                        f"params {sorted(set(mismatched) | set(missing))} (left at fresh "
+                        f"init); all other weights loaded."
+                    )
 
     def load_G_only(self, ckpt_path):
         """Warm-start only the base network (netG) from a standalone .pth file.
@@ -446,4 +502,3 @@ class BaseModel(ABC):
             if net is not None:
                 for param in net.parameters():
                     param.requires_grad = requires_grad
-
