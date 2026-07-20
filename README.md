@@ -10,9 +10,9 @@ MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 #### [Colab Tutorial: 3D Feature Extraction & 3D Multimodal Registration](https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing)
 #### [Colab Tutorial: Finetune anatomix for 3D Few-shot Segmentation with MONAI](https://colab.research.google.com/drive/1WBslSRLgAAMq6o5YFif1y0kaW9Ac15XK?usp=sharing)
 
-> **New 1**: Added a new experimental model (`anatomix-dev`). It is larger (36M params), trained on even more data, and has better features. If in sliding window mode (e.g. on whole body CT), it works best with larger crops (e.g., 256^3). Try using it instead for your experiments.
+> **New 1**: Added experimental 94M-parameter U-Net (`anatomix-dev`) and 26M-parameter 3D ViT (`anatomix-dev-vit`) models, both of which are trained on more and better data using better pretraining losses. Make sure to voxelwise normalize their features to have either unit norm or have zero mean with unit standard deviation prior to feature visualization or use in out-of-the-box feature-based applications like registration.
 
-> **New 2**: Interested in using anatomix features to enhance segmentation training regardless of the test domain and how much data you have? Check out [DropGen](https://arxiv.org/abs/2604.02564), a simple 5-line modification to standard training that uses anatomix to get SOTA domain generalization.
+> **New 2**: Interested in using anatomix features to enhance segmentation training regardless of the test domain and how much data you have? Check out [MaskGen](https://arxiv.org/abs/2604.02564), a simple 5-line modification to standard training that uses anatomix to get SOTA domain generalization.
 
 ![Highlight collage](https://www.neeldey.com/files/anatomix_github_highlight.png)
 
@@ -39,13 +39,14 @@ Pull the model and weights from HuggingFace Hub:
 from anatomix.model.load_from_hf import load_from_hf
 
 model = load_from_hf("anatomix")          # 6M params. ICLR2025 version of the pretrained model
-# model = load_from_hf("anatomix+brains") # 6M params. Brain label augmented ICLR2025 version of the pretrained model
 ```
 
-Or **NEW** experimental model architecture and weights available here:
+Or use one of the **NEW** experimental models and weights available here:
 ```python
-model = load_from_hf("anatomix-dev")      # 36M params. Experimental model. More parameters, better features. Give it a shot.
+model = load_from_hf("anatomix-dev")        # 94M-parameter experimental UNet. More parameters, better features. Give it a shot.
+# model = load_from_hf("anatomix-dev-vit")  # 26M-parameter experimental 3D ViT. Requires 128^3 inputs, but amenable to sliding window.
 ```
+(**NOTE:** When visualizing features or when using these dev models for out-of-the-box applications like registration, make sure to voxelwise normalize the features across channels to have unit norm or zero mean with unit standard deviation, either will work.)
 
 Or just load a local checkpoint:
 
@@ -61,7 +62,7 @@ model = Unet(
     ngf=16,  # channel multiplier
 )
 
-# model = torch.compile(model)  # add if using a compiled pretrained model such as `anatomix-dev`
+# model = torch.compile(model)
 
 model.load_state_dict(
     torch.load("./model-weights/anatomix.pth"),
@@ -71,7 +72,7 @@ model.load_state_dict(
 
 See how to use it on real data for feature extraction or registration in [this tutorial](https://colab.research.google.com/drive/1shivu4GtUoiDzDrE9RKD1RuEm3OqXJuD?usp=sharing). Or if you want to finetune for your own task, check out [this tutorial](https://colab.research.google.com/drive/1WBslSRLgAAMq6o5YFif1y0kaW9Ac15XK?usp=sharing) instead.
 
-(If your task involves brains, you might benefit by using the `anatomix+brains` (6M) or `anatomix-dev` (36M) weights instead.)
+(If your task involves brains, abdomens, and generally interesting shapes, you might benefit from the two `anatomix-dev` models.)
 
 ## Install dependencies:
 
@@ -153,4 +154,3 @@ If you find our work useful, please consider citing:
 
 Portions of this repository have been taken from the [Contrastive Unpaired Translation](https://github.com/taesungp/contrastive-unpaired-translation) 
 and [ConvexAdam](https://github.com/multimodallearning/convexAdam) repositories and modified. Thanks!
-

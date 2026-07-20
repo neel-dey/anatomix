@@ -4,7 +4,7 @@
 
 ![Qualitative registration collage](https://www.neeldey.com/files/qualitative-registration-v2.png)
 
-> **New 1**: Added a new experimental model (`anatomix-dev`). It is larger (36M params), trained on even more data, and has better features. If in sliding window mode, it works best with larger crops (e.g., 256^3). Try using it instead for your experiments.
+> **New 1**: Added a new experimental 94M-parameter model (`anatomix-dev`), trained on even more data.
 
 The demo script in this folder extracts pretrained network features from input
 volumes and runs a registration solver on the features to align volumes
@@ -38,8 +38,8 @@ python run_convex_adam_with_network_feats.py \
 
 Or using a local checkpoint. When loading a local `.pth`, the U-Net
 architecture flags must be set to match the checkpoint that was saved.
-The values below are the defaults for the published `anatomix` and
-`anatomix+brains` weights (so they could be omitted), but they're shown
+The values below are the defaults for the published `anatomix` weights (so
+they could be omitted), but they're shown
 explicitly here because non-default checkpoints will need to override them:
 ```bash
 python run_convex_adam_with_network_feats.py \
@@ -93,7 +93,7 @@ options:
                         Path to a local .pth model checkpoint. Mutually exclusive with --hf_variant.
   --hf_variant HF_VARIANT
                         HuggingFace Hub variant to download from neeldey/anatomix
-                        (e.g. 'anatomix', 'anatomix+brains', 'anatomix-dev').
+                        (e.g. 'anatomix', 'anatomix-dev').
                         Mutually exclusive with --ckpt_path.
   --num_downs NUM_DOWNS
                         Number of downsampling layers in the U-Net. Default 4.
