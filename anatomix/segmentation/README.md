@@ -2,7 +2,7 @@
 
 ### [Colab tutorial on how to prepare data and finetune for 3D segmentation with anatomix and MONAI](https://colab.research.google.com/drive/1WBslSRLgAAMq6o5YFif1y0kaW9Ac15XK?usp=sharing)
 
-> **New 1**: Added a new experimental model (`anatomix-dev`). It is larger (36M params), trained on even more data, and has better features. If in sliding window mode, it works best with larger crops (e.g., 256^3). Try using it instead for your experiments.
+> **New 1**: Added a new experimental 94M-parameter model (`anatomix-dev`), trained on even more data.
 
 > **New 2**: Interested in using anatomix features to enhance segmentation training regardless of the test domain and how much data you have? Check out [DropGen](https://arxiv.org/abs/2604.02564), a simple 5-line modification to standard training that uses anatomix to get SOTA domain generalization.
 
@@ -60,8 +60,8 @@ python train_segmentation.py \
 
 Or using a local checkpoint. When loading a local `.pth`, the U-Net
 architecture flags must be set to match the checkpoint that was saved.
-The values below are the defaults for the published `anatomix` and
-`anatomix+brains` weights (so they could be omitted), but they're shown
+The values below are the defaults for the published `anatomix` weights (so
+they could be omitted), but they're shown
 explicitly here because non-default checkpoints will need to override them:
 ```bash
 python train_segmentation.py \
@@ -134,7 +134,7 @@ optional arguments:
                         Mutually exclusive with --hf_variant.
   --hf_variant HF_VARIANT
                         HuggingFace Hub variant to download from neeldey/anatomix
-                        (e.g. 'anatomix', 'anatomix+brains', 'anatomix-dev').
+                        (e.g. 'anatomix', 'anatomix-dev').
                         Mutually exclusive with --pretrained_ckpt.
   --num_downs NUM_DOWNS
                         Number of downsampling layers in the U-Net. Default 4.

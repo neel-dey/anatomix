@@ -311,7 +311,7 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="HuggingFace Hub variant to download from neeldey/anatomix "
-             "(e.g. 'anatomix', 'anatomix+brains', 'anatomix-dev').",
+             "(e.g. 'anatomix', 'anatomix-dev').",
     )
     # Unet architecture kwargs. Only used with --pretrained_ckpt (or 'scratch');
     # ignored for --hf_variant (kwargs come from the variant registry).

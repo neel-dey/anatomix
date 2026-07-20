@@ -87,7 +87,7 @@ def load_model(
     if hf_variant is not None:
         print(f"Transferring from HuggingFace variant '{hf_variant}'.")
         model = load_from_hf(hf_variant).to(device)
-        feat_channels = ANATOMIX_VARIANTS[hf_variant]["unet_kwargs"]["output_nc"]
+        feat_channels = ANATOMIX_VARIANTS[hf_variant]["output_channels"]
     elif ckpt_path == "scratch":
         print("Training from random initialization.")
         model = Unet(
