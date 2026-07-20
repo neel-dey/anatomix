@@ -32,10 +32,12 @@ ANATOMIX_VARIANTS = {
 def _load_handling_compile(model, state_dict):
     """Load `state_dict` into `model`, transparently handling weights saved
     from a `torch.compile()`-wrapped model (whose keys carry an `_orig_mod.`
-    prefix). The compiled wrapper is applied before loading so the structures
-    match."""
+    prefix)."""
     if state_dict and next(iter(state_dict)).startswith("_orig_mod."):
-        model = torch.compile(model)
+        state_dict = {
+            key.removeprefix("_orig_mod."): value
+            for key, value in state_dict.items()
+        }
     model.load_state_dict(state_dict, strict=True)
     return model
 

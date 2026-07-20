@@ -465,6 +465,13 @@ class Unet(nn.Module):
         self.model = nn.Sequential(*model)
 
     def forward(self, input, layers=[], encode_only=False, verbose=False):
+        """Run ``input``, optionally collecting activations at ``layers``.
+
+        Without ``layers``, returns the network output tensor.
+        With ``layers``, returns the output tensor and a list of activations.
+        With ``encode_only``, stops early and returns only the activation list.
+        ``verbose`` prints each layer's output shape.
+        """
         if len(layers) > 0:
             feat = input
             feats = []
