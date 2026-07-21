@@ -21,7 +21,6 @@ from datagen_utils import (
 
 def process_volume(
     lab,
-    volshape,
     means_range,
     stds_range,
     perl_scales,
@@ -39,8 +38,6 @@ def process_volume(
     ----------
     lab : str
         Path to the label ensemble nifti file.
-    volshape : tuple of int
-        Shape of the volume.
     means_range : tuple of int
         Range of means for the Gaussian distributions.
     stds_range : tuple of int
@@ -79,6 +76,7 @@ def process_volume(
 
     current_label = nib.load(lab).get_fdata()
     labels = np.unique(current_label)
+    volshape = current_label.shape
 
     # Sample random means and std devs for both paired volumes:
     means1 = transform_uniform(
@@ -117,17 +115,20 @@ def process_volume(
     synthperl1 = synthview1 * (1 + perl_mult_factor * randperl_view1)
     synthperl2 = synthview2 * (1 + perl_mult_factor * randperl_view2)
     
-    # Create data dict and send to MONAI augmentation pipeline:
+    # Create data dict and send to MONAI augmentation pipeline. MONAI has always
+    # needed a leading dimension of channels, but only errors out since 1.6.0:
     inputimgs = {
-        "view1": synthperl1, "view2": synthperl2, "label": current_label,
+        "view1": synthperl1[None],
+        "view2": synthperl2[None],
+        "label": current_label,
     }
     outputs = transforms(inputimgs)
 
-    # Save synthetic volumes as nifti files:
+    # Save synthetic volumes as nifti files, dropping the channel axis again.
     # Saving as uint8 volumes to not blow up disk usage.
     nib.save(
         nib.Nifti1Image(
-            (outputs['view1'] * 255.).astype(np.uint8),
+            (outputs['view1'][0] * 255.).astype(np.uint8),
             affine=np.eye(4)
         ),
         '{}/view1/view1_{}'.format(savedir, os.path.basename(lab)),
@@ -135,7 +136,7 @@ def process_volume(
     
     nib.save(
         nib.Nifti1Image(
-            (outputs['view2'] * 255.).astype(np.uint8),
+            (outputs['view2'][0] * 255.).astype(np.uint8),
             affine=np.eye(4),
         ),
         '{}/view2/view2_{}'.format(savedir, os.path.basename(lab)),
@@ -147,7 +148,6 @@ def run(
     idx_end,
     savedir,
     label_fpaths='./label_ensembles/',
-    volshape=(128, 128, 128),
     means_range=(25, 255),
     stds_range=(5, 20),
     perl_scales=(4, 8, 16, 32),
@@ -178,8 +178,6 @@ def run(
     label_fpaths : str, optional
         Path to the directory containing label files. 
         Default ./label_ensembles/'.
-    volshape : tuple of int, optional
-        Shape of the volume. Default (128, 128, 128).
     means_range : tuple of int, optional
         Range of means for the Gaussian distributions. Default [25, 255].
     stds_range : tuple of int, optional
@@ -216,7 +214,6 @@ def run(
             executor.submit(
                 process_volume,
                 lab,
-                volshape,
                 means_range,
                 stds_range,
                 perl_scales,

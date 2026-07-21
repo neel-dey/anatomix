@@ -11,7 +11,7 @@ increase the `--max_workers` flag.
 
 ## One-call run through
 
-To run everything in one go: `./generate_training_data.sh`.
+To run everything in one go: `bash generate_training_data.sh`.
 
 ## Step-by-step run through
 
@@ -42,12 +42,12 @@ optional arguments:
                         Maximum number of worker processes to use (default: None, corresponding to all cores)
 ```
 
-### Generate 100 example 3D label ensembles:
+### Generate 200 example 3D label ensembles:
 
-This will generate 100 example 3D label ensembles using the downloaded TotalSegmentator labels.
+This will generate 200 example 3D label ensembles using the downloaded TotalSegmentator labels.
 
 ```bash
-python step1_generate_labels.py --n_ensembles 100 --templatedir /path/to/totalsegmentator/Totalsegmentator_dataset/
+python step1_generate_labels.py --n_ensembles 200 --templatedir /path/to/totalsegmentator/Totalsegmentator_dataset/
 ```
 
 Outputs will be saved in `./label_ensembles/` by default.
@@ -77,13 +77,13 @@ optional arguments:
                         Maximum number of workers for parallel processing (default: None, corresponding to all cores)
 ```
 
-### Generate 100 example 3D synthetic volume pairs of contrastive views:
+### Generate 200 example 3D synthetic volume pairs of contrastive views:
 
-This script will use the 100 example label ensembles generated above to generate 
+This script will use the 200 example label ensembles generated above to generate 
 paired volumes corresponding to two contrastive views:
 
 ```bash
-python step2_generate_views.py --end_idx 100
+python step2_generate_views.py --end_idx 200
 ```
 
 Output views will be saved in `./synthesized_views/` by default.
@@ -112,7 +112,7 @@ The codebase in `../pretraining/` requires the generated niftis to be written
 into a single HDF5 file containing the paired contrastive views and segmentation
 for each entry.
 
-To generate H5s for what you've generated so far in this README, using 80 volumes
+To generate H5s for what you've generated so far in this README, using 180 volumes
 for training and 20 for validation, run:
 ```bash
 python step3_generate_h5_w_segs.py --val_count 20

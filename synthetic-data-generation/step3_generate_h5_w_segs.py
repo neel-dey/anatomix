@@ -19,6 +19,10 @@ def main(args):
 
     n_total = len(view1s)
     n_val = args.val_count
+    assert 0 <= n_val < n_total, (
+        f"--val_count must be in [0, {n_total}), got {n_val}. Only {n_total} "
+        "view pairs were found, so this would leave no training samples."
+    )
     n_train = n_total - n_val
 
     # Create HDF5 file for training data

@@ -512,9 +512,15 @@ def get_transforms():
             RandGaussianSharpend(keys=["view1"], prob=0.25),
             RandGaussianSharpend(keys=["view2"], prob=0.25),
             # Simulate much bigger voxels. MONAI does it nnUNet style, as
-            # opposed to TorchIO's (IMO better) per-axis anisotropic style:
-            RandSimulateLowResolutiond(keys=["view1"], prob=0.333),
-            RandSimulateLowResolutiond(keys=["view2"], prob=0.333),
+            # opposed to TorchIO's (IMO better) per-axis anisotropic style.
+            # `nearest-exact` over MONAI's `nearest` default as the latter drops
+            # the half-voxel offset and shifts content towards the origin:
+            RandSimulateLowResolutiond(
+                keys=["view1"], prob=0.333, downsample_mode="nearest-exact",
+            ),
+            RandSimulateLowResolutiond(
+                keys=["view2"], prob=0.333, downsample_mode="nearest-exact",
+            ),
             # Clip out negative values:
             ThresholdIntensityd(
                 keys=["view1", "view2"], above=True, threshold=0.,
