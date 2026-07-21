@@ -104,7 +104,9 @@ def generate_label_ensemble(
         # Generate a foreground mask. This mask starts off as a sphere with a
         # random center and radius and is then randomly deformed.
         # The 5 here could have been randomized too. You should try it :)
-        deformedsphere = ~sample_corruption(grid, max_std=5.).type(torch.bool) 
+        deformedsphere = ~sample_corruption(
+            grid, arrsize=(sidelen,) * 3, max_std=5.,
+        ).type(torch.bool)
         deformedspherenp = deformedsphere.cpu().numpy().squeeze()
         deformedspherenp = median(deformedspherenp)
         
@@ -207,7 +209,7 @@ def main(
     # Generate random seeds for each process
     seeds = np.random.choice(
         range(1, n_vols*10), size=n_vols, replace=False,
-    )
+    ).tolist()
     
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = [
@@ -287,5 +289,6 @@ if __name__ == "__main__":
         args.min_templates,
         args.max_templates,
         args.savedir,
+        sidelen=args.side_length,
         max_workers=args.max_workers
     )

@@ -384,8 +384,9 @@ def sample_corruption(
     grid : torch.Tensor
         The grid tensor to which the deformation will be applied.
     arrsize : tuple of int, optional
-        The size of the 3D array representing the volume. 
-        Default is (128, 128, 128).
+        The size of the 3D array representing the volume.
+        Default is (128, 128, 128). `min_std`, `max_std` and `scales` are all
+        given in voxels at 128^3 and are rescaled to `arrsize`.
     min_std : float, optional
         The minimum standard deviation for the Perlin noise. Default is 1.0.
     max_std : float, optional
@@ -401,10 +402,18 @@ def sample_corruption(
     defsphere : torch.Tensor
         The deformed sphere as a tensor.
     """
-    # Sample a random radius and center for the foreground sphere
-    # This range of radii and centers was chosen arbitrarily
-    radius = np.random.randint(48, 72)
-    new_center = tuple(np.random.randint(-32, 32, size=3))
+    # The radii, centers, noise scales and displacement stds below are all in
+    # voxels and were chosen arbitrarily at 128^3, so scale them to `arrsize`
+    # to keep the foreground mask size-invariant.
+    size_ratio = arrsize[0] / 128
+
+    # Sample a random radius and center for the foreground sphere:
+    radius = np.random.randint(round(48 * size_ratio), round(72 * size_ratio))
+    new_center = tuple(
+        np.random.randint(
+            -round(32 * size_ratio), round(32 * size_ratio), size=3,
+        )
+    )
     
     # Generate a binary sphere with the sampled radius and center:
     initial_arr = np.abs(
@@ -418,9 +427,9 @@ def sample_corruption(
     # Let's sample noise to deform the binary sphere:
     randdef = draw_perlin_deformation(
         out_shape=(3,) + arrsize,
-        scales=scales,
-        min_std=min_std,
-        max_std=max_std,
+        scales=[noise_scale * size_ratio for noise_scale in scales],
+        min_std=min_std * size_ratio,
+        max_std=max_std * size_ratio,
     )
     
     randdef[0] = 2 * randdef[0] / (float(arrsize[0]) - 1)
