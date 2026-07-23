@@ -6,7 +6,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-cuda=$(nvidia-smi 2>/dev/null | grep -oE 'CUDA Version: [0-9]+' | grep -oE '[0-9]+$' || true)
+# Newer drivers (R610+) print "CUDA UMD Version:"; older ones "CUDA Version:"
+cuda=$(nvidia-smi 2>/dev/null | grep -oE 'CUDA (UMD )?Version: [0-9]+' | grep -oE '[0-9]+$' || true)
 
 if [ -z "${cuda:-}" ]; then
   idx=cpu                       # no NVIDIA GPU
