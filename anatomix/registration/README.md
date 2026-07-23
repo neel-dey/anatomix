@@ -49,15 +49,14 @@ bash registration_backend/install_fireants.sh          # core install
 bash registration_backend/install_fireants.sh --with-fused-ops   # + fused CUDA kernels (recommended)
 ```
 
-The fused-ops kernels (`--with-fused-ops`) are a **speed** optimization — the
-PyTorch fallback now produces the same registration quality (an earlier fork bug,
-where the non-fused multi-resolution downsampling used a different Gaussian and
-caused worse, fold-heavy deformations on harder pairs, has been fixed so the FFT
-downsampling path runs in pure torch when the kernels are absent). Compiling the
-kernels needs a CUDA toolkit whose version matches your PyTorch build (e.g. for a
-`cu130` torch, point `CUDA_HOME` at a CUDA 13.x toolkit and set
-`TORCH_CUDA_ARCH_LIST` to your GPU's arch, e.g. `12.0` for Blackwell).
-`scikit-learn` (for Dice) is an anatomix dependency and is already installed.
+The fused-ops kernels (`--with-fused-ops`) are a **speed** optimization: they
+accelerate the multi-resolution registration, while the pure-PyTorch fallback
+(used when the kernels are not compiled) produces the same registration quality,
+only more slowly. Compiling the kernels needs a CUDA toolkit whose version
+matches your PyTorch build (e.g. for a `cu130` torch, point `CUDA_HOME` at a CUDA
+13.x toolkit and set `TORCH_CUDA_ARCH_LIST` to your GPU's arch, e.g. `12.0` for
+Blackwell). `scikit-learn` (for Dice) is an anatomix dependency and is already
+installed.
 
 ## Quick start — reproduce the SOTA Learn2Reg-AbdomenMRCT result
 
@@ -80,9 +79,9 @@ python anatomix-register.py \
     --output-dir out --exp-name mrct
 ```
 
-Over the 8 pairs this reaches **mean macro-Dice ≈ 0.875** with near-zero folds,
-matching the reference `anatomix-dev-vit` result (report ViT-S ≈ 0.87). `--loss`
-defaults to `masked_cc` when both masks are present and `cc` otherwise.
+Over the 8 pairs this reaches **mean macro-Dice ≈ 0.879** with near-zero folds,
+matching the reference `anatomix-dev-vit` result. `--loss` defaults to
+`masked_cc` when both masks are present and `cc` otherwise.
 
 ## Input modes
 

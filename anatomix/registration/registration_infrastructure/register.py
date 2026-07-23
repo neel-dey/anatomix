@@ -298,9 +298,8 @@ def run_registration(
                 # equivariant, so features must be recomputed from the warped
                 # image, not resampled), optimize an identity-initialized residual,
                 # and compose. Used for linear->deformable too: composing the
-                # validated get_warped_coordinates() grid is exact, whereas feeding
-                # a linear stage's matrix as GreedyRegistration's init_affine
-                # diverges on large transforms.
+                # get_warped_coordinates() grid is exact for any prior transform,
+                # so a linear stage's matrix is never fed to init_affine.
                 composed = True
                 if reextract_moving is not None:
                     prewarped_images = reextract_moving(warped_coordinates)

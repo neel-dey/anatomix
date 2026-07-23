@@ -11,7 +11,7 @@ Install the backend once with::
 
     bash registration_backend/install_fireants.sh
 
-Reproduce the SOTA Learn2Reg AbdomenMRCT result (>0.88 mean macro-Dice, ~0
+Reproduce the SOTA Learn2Reg AbdomenMRCT result (≈0.879 mean macro-Dice, ~0
 folds) with the default single deformable ``masked_cc`` stage::
 
     python anatomix-register.py \\
