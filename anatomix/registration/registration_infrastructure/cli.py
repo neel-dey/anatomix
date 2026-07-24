@@ -12,7 +12,7 @@ import os
 
 import nibabel as nib
 
-from .io_utils import NIFTI_EXTS, read_pairs_csv
+from .io_utils import NIFTI_EXTS, VOLUME_COLUMNS, read_pairs_csv
 
 TRANSFORM_RANK = {"rigid": 0, "affine": 1, "deformable": 2}
 VALID_LOSSES = {"cc", "mi", "mse", "masked_cc", "masked_mi", "masked_mse"}
@@ -38,10 +38,19 @@ def build_parser():
     )
 
     mode = parser.add_argument_group("input mode (choose exactly one)")
-    mode.add_argument("--fixed", help="Single-pair fixed image (.nii/.nii.gz).")
-    mode.add_argument("--moving", help="Single-pair moving image (.nii/.nii.gz).")
-    mode.add_argument("--fixed-dir", help="Batch: directory of fixed images.")
-    mode.add_argument("--moving-dir", help="Batch: directory of moving images.")
+    mode.add_argument(
+        "--fixed", help="Single-pair fixed image (.nii/.nii.gz).")
+    mode.add_argument(
+        "--moving", help="Single-pair moving image (.nii/.nii.gz).")
+    mode.add_argument(
+        "--fixed-dir",
+        help="Batch: directory of fixed images. Fixed and moving directories "
+        "are paired by independent lexicographic sort (equal counts required); "
+        "use --registration-pairs-csv when filenames do not correspond by sort "
+        "order.",
+    )
+    mode.add_argument(
+        "--moving-dir", help="Batch: directory of moving images.")
     mode.add_argument(
         "--registration-pairs-csv",
         help="Batch: CSV with a header and columns fixed,moving"
@@ -52,17 +61,24 @@ def build_parser():
     aux.add_argument("--fixed-mask", help="Fixed registration mask.")
     aux.add_argument("--moving-mask", help="Moving registration mask.")
     aux.add_argument("--fixed-seg", help="Fixed segmentation (enables Dice).")
-    aux.add_argument("--moving-seg", help="Moving segmentation (warped to fixed).")
-    aux.add_argument("--fixed-mask-dir", help="Batch directory of fixed masks.")
-    aux.add_argument("--moving-mask-dir", help="Batch directory of moving masks.")
+    aux.add_argument(
+        "--moving-seg", help="Moving segmentation (warped to fixed).")
+    aux.add_argument("--fixed-mask-dir",
+                     help="Batch directory of fixed masks.")
+    aux.add_argument("--moving-mask-dir",
+                     help="Batch directory of moving masks.")
     aux.add_argument("--fixed-seg-dir", help="Batch directory of fixed segs.")
-    aux.add_argument("--moving-seg-dir", help="Batch directory of moving segs.")
+    aux.add_argument("--moving-seg-dir",
+                     help="Batch directory of moving segs.")
 
-    clip = parser.add_argument_group("intensity clipping (reused across a batch)")
+    clip = parser.add_argument_group(
+        "intensity clipping (reused across a batch)")
     clip.add_argument("--fixed-minclip", type=float, help="Fixed lower clip.")
     clip.add_argument("--fixed-maxclip", type=float, help="Fixed upper clip.")
-    clip.add_argument("--moving-minclip", type=float, help="Moving lower clip.")
-    clip.add_argument("--moving-maxclip", type=float, help="Moving upper clip.")
+    clip.add_argument("--moving-minclip", type=float,
+                      help="Moving lower clip.")
+    clip.add_argument("--moving-maxclip", type=float,
+                      help="Moving upper clip.")
 
     tf = parser.add_argument_group(
         "transform chain (per-stage lists are comma-separated, one entry per "
@@ -169,6 +185,12 @@ def build_parser():
     misc = parser.add_argument_group("misc")
     misc.add_argument("--seed", type=int, default=12345, help="Random seed.")
     misc.add_argument(
+        "--device", default="auto",
+        help="Compute device: 'auto' (pick the visible CUDA device with the "
+        "most free memory), 'cpu', 'cuda', or 'cuda:N'. Honors "
+        "CUDA_VISIBLE_DEVICES, which also restricts 'auto'.",
+    )
+    misc.add_argument(
         "--verbose", action=argparse.BooleanOptionalAction, default=True,
         help="Print resolved inputs, stage progress, outputs, and metrics.",
     )
@@ -239,7 +261,8 @@ def _int_schedule(token, name):
     try:
         return [int(x) for x in token.split("x")]
     except ValueError:
-        raise ValueError(f"{name}: expected 'AxBx...' integers, got {token!r}.")
+        raise ValueError(
+            f"{name}: expected 'AxBx...' integers, got {token!r}.")
 
 
 def _split_stages(value, n, name):
@@ -268,7 +291,7 @@ def _resolve_step_sizes(value, kinds, n):
 
 
 def _resolve_shrink(value, n):
-    tokens = [ "8x4x2x1" ] * n if value is None else _split_stages(
+    tokens = ["8x4x2x1"] * n if value is None else _split_stages(
         value, n, "--shrink-factors"
     )
     schedules = [_int_schedule(t, "--shrink-factors") for t in tokens]
@@ -311,6 +334,11 @@ def _resolve_cc_kernels(value, losses, shrinks, n):
     kernels = []
     for i in range(n):
         if not is_cc[i]:
+            if tokens[i] != "na":
+                raise ValueError(
+                    f"--cc-kernel-widths: stage {i} does not use a CC loss; use "
+                    "'na' (CC kernel widths apply only to cc/masked_cc stages)."
+                )
             kernels.append(None)
             continue
         if tokens[i] == "na":
@@ -341,6 +369,11 @@ def _resolve_sigmas(value, kinds, default, name, n):
     sigmas = []
     for i in range(n):
         if not is_def[i]:
+            if tokens[i] != "na":
+                raise ValueError(
+                    f"{name}: stage {i} is not deformable; use 'na' (smoothing "
+                    "sigmas apply only to deformable stages)."
+                )
             sigmas.append(None)
             continue
         if tokens[i] == "na":
@@ -421,7 +454,8 @@ def parse_sliding_window(args):
     args.sw_mode = parts[3]
     args.sw_sigma = float(parts[4])
     if args.sw_window <= 0 or args.sw_batch <= 0:
-        raise ValueError("--sliding-window-params: window/sw_batch must be > 0.")
+        raise ValueError(
+            "--sliding-window-params: window/sw_batch must be > 0.")
     if not 0.0 <= args.sw_overlap < 1.0:
         raise ValueError("--sliding-window-params: overlap must be in [0, 1).")
     if args.sw_mode not in ("constant", "gaussian"):
@@ -495,7 +529,8 @@ def _single_pair(args):
     columns = ["fixed", "moving"]
     pair = {"fixed": _abspath(args.fixed), "moving": _abspath(args.moving)}
     if bool(args.fixed_mask) != bool(args.moving_mask):
-        raise ValueError("Provide both --fixed-mask and --moving-mask, or neither.")
+        raise ValueError(
+            "Provide both --fixed-mask and --moving-mask, or neither.")
     if args.fixed_mask:
         pair["fixed_mask"] = _abspath(args.fixed_mask)
         pair["moving_mask"] = _abspath(args.moving_mask)
@@ -558,6 +593,29 @@ def _dir_pairs(args):
     return pairs, columns
 
 
+_SINGLE_AUX = ("fixed_mask", "moving_mask", "fixed_seg", "moving_seg")
+_DIR_AUX = (
+    "fixed_mask_dir", "moving_mask_dir", "fixed_seg_dir", "moving_seg_dir",
+)
+
+
+def _reject_foreign_aux_flags(args, keep):
+    """Error if mask/seg flags belonging to a different input mode are set.
+
+    ``keep`` is the tuple of aux flag names valid for the active mode; any other
+    aux flag that is set is a silent no-op and therefore rejected.
+    """
+    foreign = [f for f in _SINGLE_AUX + _DIR_AUX
+               if f not in keep and getattr(args, f)]
+    if foreign:
+        flags = ", ".join("--" + f.replace("_", "-") for f in foreign)
+        raise ValueError(
+            f"{flags}: not valid for the chosen input mode and would be "
+            "ignored. Use the mask/seg flags (or CSV columns) that match the "
+            "input mode."
+        )
+
+
 def resolve_inputs(args):
     """Resolve the input mode into (pairs, input_columns)."""
     has_single = bool(args.fixed) or bool(args.moving)
@@ -570,12 +628,17 @@ def resolve_inputs(args):
         )
     if has_single:
         if not (args.fixed and args.moving):
-            raise ValueError("Single-pair mode needs both --fixed and --moving.")
+            raise ValueError(
+                "Single-pair mode needs both --fixed and --moving.")
+        _reject_foreign_aux_flags(args, _SINGLE_AUX)
         return _single_pair(args)
     if has_dir:
         if not (args.fixed_dir and args.moving_dir):
-            raise ValueError("Batch dir mode needs --fixed-dir and --moving-dir.")
+            raise ValueError(
+                "Batch dir mode needs --fixed-dir and --moving-dir.")
+        _reject_foreign_aux_flags(args, _DIR_AUX)
         return _dir_pairs(args)
+    _reject_foreign_aux_flags(args, ())
     columns, rows = read_pairs_csv(args.registration_pairs_csv)
     return rows, columns
 
@@ -587,7 +650,8 @@ def _validate_volume(path, role):
         raise ValueError(f"{role}: expected a .nii/.nii.gz file: {path}")
     shape = nib.load(path).header.get_data_shape()
     if len(shape) < 3:
-        raise ValueError(f"{role}: expected a 3D volume, got shape {tuple(shape)}.")
+        raise ValueError(
+            f"{role}: expected a 3D volume, got shape {tuple(shape)}.")
     if len(shape) > 3 and any(d != 1 for d in shape[3:]):
         raise ValueError(
             f"{role}: expected a single-channel 3D volume, got {tuple(shape)}."
@@ -596,9 +660,54 @@ def _validate_volume(path, role):
 
 def validate_volumes(pairs):
     for index, pair in enumerate(pairs):
-        for col, path in pair.items():
+        for col in VOLUME_COLUMNS:
+            path = pair.get(col)
             if path is not None:
                 _validate_volume(path, f"pair {index} [{col}]")
+
+
+def validate_pairs(pairs, stages):
+    """Pre-flight per-pair checks that must run before the backbone loads.
+
+    Catches the cases that would otherwise fail deep in the pipeline (after the
+    expensive model load, mid-batch): a missing required ``fixed``/``moving``
+    path, a lone mask, a fixed segmentation without a moving one, and an explicit
+    masked loss on a pair that has no masks.
+    """
+    explicit_masked = any(
+        s["loss"] is not None and s["loss"].startswith("masked_") for s in stages
+    )
+    for index, pair in enumerate(pairs):
+        if not pair.get("fixed"):
+            raise ValueError(f"pair {index}: missing required 'fixed' path.")
+        if not pair.get("moving"):
+            raise ValueError(f"pair {index}: missing required 'moving' path.")
+        has_fixed_mask = pair.get("fixed_mask") is not None
+        has_moving_mask = pair.get("moving_mask") is not None
+        if has_fixed_mask != has_moving_mask:
+            raise ValueError(
+                f"pair {index}: provide both fixed and moving masks, or neither."
+            )
+        if pair.get("fixed_seg") is not None and pair.get("moving_seg") is None:
+            raise ValueError(
+                f"pair {index}: a fixed segmentation requires a moving one."
+            )
+        if explicit_masked and not (has_fixed_mask and has_moving_mask):
+            raise ValueError(
+                f"pair {index}: a masked loss was requested but the pair has no "
+                "masks."
+            )
+
+
+def validate_device(spec):
+    """Validate the ``--device`` string (resolved to a torch device later)."""
+    if spec in ("auto", "cpu", "cuda"):
+        return
+    if spec.startswith("cuda:") and spec[5:].isdigit():
+        return
+    raise ValueError(
+        f"--device: expected 'auto', 'cpu', 'cuda', or 'cuda:N', got {spec!r}."
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -619,8 +728,10 @@ def main(argv=None):
             )
         build_custom_kwargs(args)
         stages = build_stages(args)
+        validate_device(args.device)
         pairs, input_columns = resolve_inputs(args)
         validate_volumes(pairs)
+        validate_pairs(pairs, stages)
     except ValueError as error:
         parser.error(str(error))
 

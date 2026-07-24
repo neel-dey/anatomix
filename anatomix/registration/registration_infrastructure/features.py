@@ -16,7 +16,6 @@ that FireANTs registers. The steps mirror the AbdomenMRCT reference pipeline:
 Everything here operates on plain ``torch`` tensors and the anatomix models; no
 FireANTs import is required.
 """
-import numpy as np
 import torch
 import torch.nn.functional as F
 from monai.inferers import sliding_window_inference
@@ -172,7 +171,11 @@ def _sliding_window_features(
                     sigma_scale=sigma,
                 )
         except (torch.cuda.OutOfMemoryError, RuntimeError) as exc:
-            if "out of memory" not in str(exc).lower() or batch <= 1:
+            is_oom = isinstance(exc, torch.cuda.OutOfMemoryError) or any(
+                token in str(exc).lower()
+                for token in ("out of memory", "alloc", "cudnn_status_alloc")
+            )
+            if not is_oom or batch <= 1:
                 raise
             torch.cuda.empty_cache()
             batch = max(1, batch // 2)
@@ -289,11 +292,13 @@ def prepare_feature_channels(
         feats = _sliding_window_features(
             volume, model, window, sw_batch, overlap, sw_mode, sigma, verbose,
         )
-        feats = normalize_features(feats, feature_normalization)
         if resample:
             feats = F.interpolate(
                 feats, size=orig_shape, mode="trilinear", align_corners=True,
             )
+        # Normalize on the (original) registration grid so the L2/standardized
+        # invariant holds exactly there, not on the isotropic extraction grid.
+        feats = normalize_features(feats, feature_normalization)
 
     mind = None
     if use_mindssc in ("both", "mindssc-only"):

@@ -12,13 +12,17 @@ Install the backend once with::
     bash registration_backend/install_fireants.sh
 
 Reproduce the SOTA Learn2Reg AbdomenMRCT result (≈0.879 mean macro-Dice, ~0
-folds) with the default single deformable ``masked_cc`` stage::
+folds) with a single deformable ``masked_cc`` stage. The ``21x13x11x9`` CC
+kernel schedule is tuned for this dataset and must be passed explicitly (omit it
+and each stage falls back to FireANTs' own default kernel, which does not reach
+zero folds)::
 
     python anatomix-register.py \\
         --fixed CT.nii.gz --moving MR.nii.gz \\
         --fixed-mask CT_mask.nii.gz --moving-mask MR_mask.nii.gz \\
         --moving-seg MR_seg.nii.gz --fixed-seg CT_seg.nii.gz \\
         --backbone anatomix-dev-vit --step-size 1.0 \\
+        --cc-kernel-widths 21x13x11x9 \\
         --fixed-minclip -450 --fixed-maxclip 450 \\
         --moving-minclip 0 --moving-maxclip 20000
 

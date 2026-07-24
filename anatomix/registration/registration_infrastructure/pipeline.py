@@ -7,20 +7,23 @@ and label onto the fixed geometry -> Dice and fold metrics -> a per-pair row in
 the metrics CSV. Batch pairs are processed one at a time so arbitrary shapes are
 supported and GPU memory stays bounded.
 """
+import csv
+import math
 import os
 import random
+from collections import Counter
 
 import numpy as np
 import torch
 
-from ._fireants import apply_mask_to_image
+from ._fireants import FFO_AVAILABLE, apply_mask_to_image
 from .features import (
     combine_feature_channels,
     load_backbone,
     minmax_normalize,
     prepare_feature_channels,
 )
-from .io_utils import strip_nifti_ext, write_metrics_csv
+from .io_utils import strip_nifti_ext
 from .metrics import count_folds, dice_score
 from .register import run_registration
 from .warp_io import (
@@ -34,11 +37,35 @@ from .warp_io import (
 
 
 def seed_everything(seed):
-    """Seed Python, NumPy and PyTorch (CPU + CUDA) RNGs."""
+    """Seed Python, NumPy and PyTorch (CPU + CUDA) RNGs (deterministic cuDNN)."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+def select_device(spec):
+    """Resolve a ``--device`` spec to a :class:`torch.device`.
+
+    ``'auto'`` picks the visible CUDA device with the most free memory, so a
+    shared multi-GPU box does not default onto a busy GPU; ``'cpu'``, ``'cuda'``
+    and ``'cuda:N'`` are honored verbatim. ``CUDA_VISIBLE_DEVICES`` restricts the
+    candidates considered by ``'auto'`` (and the meaning of any index).
+    """
+    if spec == "cpu":
+        return torch.device("cpu")
+    if spec == "auto":
+        if not torch.cuda.is_available():
+            return torch.device("cpu")
+        best, best_free = 0, -1
+        for index in range(torch.cuda.device_count()):
+            free, _ = torch.cuda.mem_get_info(index)
+            if free > best_free:
+                best_free, best = free, index
+        return torch.device(f"cuda:{best}")
+    return torch.device(spec)
 
 
 def resolve_stage_losses(stages, has_masks):
@@ -71,8 +98,11 @@ def _validate_pair(pair, label):
     return has_fixed_mask and has_moving_mask
 
 
-def process_pair(pair, args, stages, feat_cfg, model, device, prefix, label):
+def process_pair(pair, args, stages, feat_cfg, model, device, prefix, stem,
+                 label):
     """Register one fixed/moving pair and write its outputs.
+
+    ``stem`` is the (batch-disambiguated) output filename stem for this pair.
 
     Returns
     -------
@@ -172,7 +202,8 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, label):
             comb = combine_feature_channels(
                 feats, mind, warped_mask_t, args.use_mindssc,
             )
-        warped_img = load_image(pair["fixed"], device)  # fixed geometry template
+        # fixed geometry template
+        warped_img = load_image(pair["fixed"], device)
         warped_img.array = comb
         if any_masked:
             warped_mask_img = load_image(pair["fixed_mask"], device)
@@ -183,10 +214,9 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, label):
     result = run_registration(
         fixed_batch, moving_batch, stage_specs,
         initialization=args.initialization, verbose=args.verbose,
-        reextract_moving=reextract_moving,
+        reextract_moving=reextract_moving, has_mask_channel=any_masked,
     )
     grid = result.warped_coordinates
-    stem = strip_nifti_ext(pair["moving"])
 
     moved = warp_volume(moving_raw, grid, "bilinear")
     moved_path = os.path.join(args.output_dir, f"{prefix}moved-{stem}.nii.gz")
@@ -194,7 +224,7 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, label):
 
     save_transforms(
         result, args.output_transformation_convention, args.collapse,
-        args.output_dir, prefix, stem, verbose=args.verbose,
+        args.output_dir, prefix, stem,
     )
 
     num_folds = count_folds(grid)
@@ -203,7 +233,11 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, label):
         moving_seg = load_image(
             pair["moving_seg"], device, is_segmentation=False,
         ).array.float()
-        moved_seg = warp_volume(moving_seg, grid, "nearest").round().short()
+        # Nearest warp on float32 preserves integer labels exactly; int32 holds
+        # any realistic label id (int16 would wrap ids >= 32768).
+        moved_seg = warp_volume(moving_seg, grid, "nearest").round().to(
+            torch.int32
+        )
         moved_seg_path = os.path.join(
             args.output_dir, f"{prefix}moved-seg-{stem}.nii.gz",
         )
@@ -211,6 +245,8 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, label):
         if pair.get("fixed_seg") is not None:
             fixed_seg = load_image(pair["fixed_seg"], device).array
             dice = dice_score(fixed_seg.cpu().numpy(), moved_seg.cpu().numpy())
+            if isinstance(dice, float) and math.isnan(dice):
+                dice = ""  # no foreground in the fixed seg -> blank, not "nan"
 
     if args.verbose:
         print(f"  -> moved:  {moved_path}", flush=True)
@@ -247,7 +283,23 @@ def run(args, pairs, input_columns, stages):
         The metrics rows that were written.
     """
     seed_everything(args.seed)
-    device = torch.device("cuda")
+    if not FFO_AVAILABLE:
+        print(
+            "[warning] fireants_fused_ops is not available; FireANTs is using "
+            "its pure-PyTorch fallback. On the stock fork this path has a "
+            "multi-resolution downsampling bug that degrades accuracy and adds "
+            "folds, so the fused-ops kernels must be used for now for correct/"
+            "SOTA results. Build them with "
+            "registration_backend/install_fireants.sh.",
+            flush=True,
+        )
+    device = select_device(args.device)
+    if args.verbose:
+        name = (
+            f" ({torch.cuda.get_device_name(device)})"
+            if device.type == "cuda" else ""
+        )
+        print(f"[device] {device}{name}", flush=True)
 
     model = None
     if args.use_mindssc != "mindssc-only":
@@ -276,19 +328,39 @@ def run(args, pairs, input_columns, stages):
     os.makedirs(args.output_dir, exist_ok=True)
     prefix = f"{args.exp_name}-" if args.exp_name else ""
 
-    rows = []
-    for index, pair in enumerate(pairs):
-        label = f"pair {index}"
-        dice, num_folds = process_pair(
-            pair, args, stages, feat_cfg, model, device, prefix, label,
-        )
-        row = {col: (pair.get(col) or "") for col in input_columns}
-        row["dice"] = dice
-        row["num_folds"] = num_folds
-        rows.append(row)
+    # Output stems come from the moving basename; disambiguate collisions (same
+    # basename across different directories) with a zero-padded pair index so
+    # outputs never overwrite each other.
+    raw_stems = [strip_nifti_ext(pair["moving"]) for pair in pairs]
+    counts = Counter(raw_stems)
+    width = max(1, len(str(len(pairs) - 1)))
+    stems = [
+        f"{index:0{width}d}-{stem}" if counts[stem] > 1 else stem
+        for index, stem in enumerate(raw_stems)
+    ]
 
+    # Write the metrics CSV incrementally (one flushed row per completed pair) so
+    # a mid-batch failure preserves the results computed so far.
+    fieldnames = list(input_columns) + ["dice", "num_folds"]
     csv_path = os.path.join(args.output_dir, f"{prefix}metrics.csv")
-    write_metrics_csv(csv_path, input_columns, rows)
+    rows = []
+    with open(csv_path, "w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        handle.flush()
+        for index, pair in enumerate(pairs):
+            label = f"pair {index}"
+            dice, num_folds = process_pair(
+                pair, args, stages, feat_cfg, model, device, prefix,
+                stems[index], label,
+            )
+            row = {col: (pair.get(col) or "") for col in input_columns}
+            row["dice"] = dice
+            row["num_folds"] = num_folds
+            writer.writerow({key: row.get(key, "") for key in fieldnames})
+            handle.flush()
+            rows.append(row)
+
     if args.verbose:
         print(f"[done] wrote metrics: {csv_path}", flush=True)
     return rows

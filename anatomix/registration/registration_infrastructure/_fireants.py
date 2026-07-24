@@ -24,6 +24,8 @@ try:
     from fireants.registration.rigid import RigidRegistration
     from fireants.registration.affine import AffineRegistration
     from fireants.registration.greedy import GreedyRegistration
+    from fireants.registration.deformablemixin import DeformableMixin
+    from fireants.interpolator import FFO_AVAILABLE
     from fireants.interpolator.grid_sample import torch_grid_sampler_3d
     from fireants.utils.imageutils import jacobian
 except ImportError as exc:  # pragma: no cover - exercised only without backend
@@ -42,6 +44,8 @@ __all__ = [
     "RigidRegistration",
     "AffineRegistration",
     "GreedyRegistration",
+    "DeformableMixin",
+    "FFO_AVAILABLE",
     "torch_grid_sampler_3d",
     "jacobian",
 ]

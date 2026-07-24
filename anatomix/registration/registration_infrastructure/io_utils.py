@@ -7,6 +7,11 @@ import csv
 import os
 
 NIFTI_EXTS = (".nii", ".nii.gz")
+# CSV/pipeline columns that hold volume paths (everything else is passthrough
+# metadata, not resolved as a path or validated as a NIfTI).
+VOLUME_COLUMNS = (
+    "fixed", "moving", "fixed_mask", "moving_mask", "fixed_seg", "moving_seg",
+)
 
 
 def strip_nifti_ext(path):
@@ -22,17 +27,20 @@ def strip_nifti_ext(path):
 def read_pairs_csv(path):
     """Read a registration-pairs CSV with a header row.
 
-    The header must contain ``fixed`` and ``moving``; optional columns are
-    ``fixed_mask``, ``moving_mask``, ``fixed_seg``, ``moving_seg``. Empty cells
-    mean "absent". Relative paths are resolved against the CSV's parent
-    directory.
+    The header must contain ``fixed`` and ``moving``; optional volume columns are
+    ``fixed_mask``, ``moving_mask``, ``fixed_seg``, ``moving_seg`` (see
+    :data:`VOLUME_COLUMNS`). Empty volume cells mean "absent". Relative paths in
+    volume columns are resolved against the CSV's parent directory. Any other
+    column is preserved verbatim as opaque metadata (not resolved as a path or
+    validated as a volume) and carried through to the metrics CSV.
 
     Returns
     -------
     columns : list of str
         The CSV header, in order.
     rows : list of dict
-        One dict per row mapping each column to an absolute path or ``None``.
+        One dict per row mapping each volume column to an absolute path or
+        ``None``, and each metadata column to its raw string value.
     """
     base = os.path.dirname(os.path.abspath(path))
     with open(path, newline="") as handle:
@@ -48,7 +56,9 @@ def read_pairs_csv(path):
             resolved = {}
             for key in columns:
                 value = (record.get(key) or "").strip()
-                if not value:
+                if key not in VOLUME_COLUMNS:
+                    resolved[key] = value  # opaque metadata, passthrough
+                elif not value:
                     resolved[key] = None
                 elif os.path.isabs(value):
                     resolved[key] = value
@@ -56,24 +66,3 @@ def read_pairs_csv(path):
                     resolved[key] = os.path.join(base, value)
             rows.append(resolved)
     return columns, rows
-
-
-def write_metrics_csv(out_path, input_columns, rows):
-    """Write per-pair metrics, preserving input columns and appending metrics.
-
-    Parameters
-    ----------
-    out_path : str
-        Output CSV path.
-    input_columns : list of str
-        Input columns to preserve, in order.
-    rows : list of dict
-        One dict per pair, containing the input columns plus ``dice`` and
-        ``num_folds``.
-    """
-    fieldnames = list(input_columns) + ["dice", "num_folds"]
-    with open(out_path, "w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({key: row.get(key, "") for key in fieldnames})

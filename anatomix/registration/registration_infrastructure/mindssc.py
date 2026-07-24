@@ -7,9 +7,11 @@ contrast differences and therefore well suited to multi-modal registration
 (http://mpheinrich.de/pub/miccai2013_943_mheinrich.pdf).
 
 This is a self-contained copy of the descriptor used by the ConvexAdam backend
-(``registration_backend/convexadam/convex_adam_utils.py``), with the only change
-being that every tensor is allocated on the *input's* device instead of a
-hard-coded ``.cuda()``. The numerical result is identical to the original.
+(``registration_backend/convexadam/convex_adam_utils.py``). Two changes were
+made: every tensor is allocated on the *input's* device instead of a hard-coded
+``.cuda()``, and the default ``radius`` is 1 (matching the AbdomenMRCT reference
+pipeline) rather than the ConvexAdam copy's 2. For identical ``radius``/
+``dilation`` the numerical result is bit-identical to the original.
 """
 import numpy as np
 import torch

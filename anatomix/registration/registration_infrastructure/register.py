@@ -30,7 +30,6 @@ a moment initialization, may use the moment affine as ``init_affine``.
 """
 from collections import namedtuple
 
-import torch
 import torch.nn.functional as F
 
 from ._fireants import (
@@ -39,7 +38,6 @@ from ._fireants import (
     GreedyRegistration,
     MomentsRegistration,
     RigidRegistration,
-    torch_grid_sampler_3d,
 )
 
 # One entry per executed stage (including a leading 'init' moment stage when an
@@ -49,8 +47,6 @@ from ._fireants import (
 StageResult = namedtuple(
     "StageResult", ["name", "registration", "is_deformable", "composed"]
 )
-
-TRANSFORM_RANK = {"rigid": 0, "affine": 1, "deformable": 2}
 
 
 class RegistrationResult:
@@ -147,26 +143,18 @@ def _common_kwargs(stage, fixed_images, moving_images, verbose):
     return kwargs
 
 
-def _warp_feature_tensor(feats, grid, masked):
-    """Resample a (masked) feature tensor by a cumulative grid onto the fixed grid.
+def _stage_images(images, has_mask_channel, stage_masked):
+    """Feature images seen by a single stage's loss.
 
-    Continuous feature channels use trilinear interpolation; an attached mask
-    channel (the last channel, present for masked losses) uses nearest.
+    When a mask channel has been appended (the last channel, present whenever any
+    stage in the chain uses a masked loss) but *this* stage's loss is unmasked,
+    the mask channel is stripped so it does not leak into the unmasked objective
+    as an ordinary feature. Masked stages keep the mask channel (FireANTs' masked
+    loss splits it off).
     """
-    if masked:
-        body = torch_grid_sampler_3d(
-            feats[:, :-1], grid=grid, mode="bilinear",
-            padding_mode="zeros", align_corners=True, is_displacement=False,
-        )
-        mask = torch_grid_sampler_3d(
-            feats[:, -1:], grid=grid, mode="nearest",
-            padding_mode="zeros", align_corners=True, is_displacement=False,
-        )
-        return torch.cat([body, mask], dim=1)
-    return torch_grid_sampler_3d(
-        feats, grid=grid, mode="bilinear",
-        padding_mode="zeros", align_corners=True, is_displacement=False,
-    )
+    if has_mask_channel and not stage_masked:
+        return FakeBatchedImages(images()[:, :-1], images)
+    return images
 
 
 def _compose_grids(grid_old, grid_residual):
@@ -186,7 +174,7 @@ def _compose_grids(grid_old, grid_residual):
 
 def run_registration(
     fixed_images, moving_images, stages, initialization="none", verbose=False,
-    reextract_moving=None,
+    reextract_moving=None, has_mask_channel=False,
 ):
     """Run the moment initialization and iterative stage chain.
 
@@ -194,7 +182,7 @@ def run_registration(
     ----------
     fixed_images, moving_images : BatchedImages
         Fixed/moving feature images (mask appended as the last channel when a
-        masked loss is used).
+        masked loss is used anywhere in the chain).
     stages : list of dict
         One dict per stage with keys ``kind`` (``'rigid'``/``'affine'``/
         ``'deformable'``), ``loss``, ``step``, ``shrink`` (list of int),
@@ -204,14 +192,18 @@ def run_registration(
         Closed-form moment initialization run before the stage chain.
     verbose : bool, optional
         Print stage progress (and show FireANTs progress bars).
-    reextract_moving : callable, optional
+    reextract_moving : callable
         ``reextract_moving(grid) -> BatchedImages``. Given the current cumulative
         fixed->moving sampling grid, warp the original moving *image* by it and
         re-extract features, returning a fresh moving feature batch on the fixed
-        grid. Used to warm-start a deformable stage from any prior transform: the
-        anatomix feature extractor is not warp-equivariant, so features must be
-        recomputed from the warped image rather than resampled. If ``None``, the
-        prewarp falls back to resampling the feature maps directly (approximate).
+        grid. Required to warm-start a deformable stage from any prior transform
+        (the anatomix feature extractor is not warp-equivariant, so features must
+        be recomputed from the warped image rather than resampled); a ``None``
+        callback with such a stage raises ``ValueError``.
+    has_mask_channel : bool, optional
+        Whether the feature images carry an appended mask channel (last channel).
+        When True, that channel is stripped for any stage whose loss is unmasked
+        so it never leaks into an unmasked objective.
 
     Returns
     -------
@@ -224,7 +216,8 @@ def run_registration(
     if initialization != "none":
         order = 1 if initialization == "center-of-mass" else 2
         if verbose:
-            print(f"  [init] MomentsRegistration (moments={order})", flush=True)
+            print(
+                f"  [init] MomentsRegistration (moments={order})", flush=True)
         moments = MomentsRegistration(
             scale=1, fixed_images=fixed_images, moving_images=moving_images,
             moments=order,
@@ -240,15 +233,20 @@ def run_registration(
             )
         )
 
-    cum_linear = None          # physical cumulative linear matrix (N, d+1, d+1)
+    # physical cumulative linear matrix (N, d+1, d+1)
+    cum_linear = None
     warped_coordinates = None  # canonical cumulative sampling grid
-    deformed = False           # a deformable stage has run
     num_deformable = 0
     first = True
 
     for index, stage in enumerate(stages):
         kind = stage["kind"]
         label = f"{index}-{kind}"
+        stage_masked = stage["loss"].startswith("masked_")
+        # Feed each stage only the channels its loss consumes: strip the appended
+        # mask channel for an unmasked stage so it never enters that objective.
+        f_imgs = _stage_images(fixed_images, has_mask_channel, stage_masked)
+        m_imgs = _stage_images(moving_images, has_mask_channel, stage_masked)
         if verbose:
             print(
                 f"  [stage {index}] {kind}: loss={stage['loss']} "
@@ -259,7 +257,7 @@ def run_registration(
 
         if kind in ("rigid", "affine"):
             init_kwargs = _linear_init_kwargs(kind, moments, cum_linear, first)
-            common = _common_kwargs(stage, fixed_images, moving_images, verbose)
+            common = _common_kwargs(stage, f_imgs, m_imgs, verbose)
             if kind == "rigid":
                 reg = RigidRegistration(**common, **init_kwargs)
             else:
@@ -270,12 +268,12 @@ def run_registration(
                 else reg.get_affine_matrix()
             )
             warped_coordinates = reg.get_warped_coordinates(
-                fixed_images, moving_images
+                f_imgs, m_imgs
             ).detach()
             stage_results.append(StageResult(kind, reg, False, False))
 
         else:  # deformable
-            common = _common_kwargs(stage, fixed_images, moving_images, verbose)
+            common = _common_kwargs(stage, f_imgs, m_imgs, verbose)
             common["deformation_type"] = "compositive"
             common["smooth_grad_sigma"] = stage["smooth_grad"]
             common["smooth_warp_sigma"] = stage["smooth_warp"]
@@ -289,7 +287,7 @@ def run_registration(
                 reg = GreedyRegistration(**common)
                 reg.optimize()
                 warped_coordinates = reg.get_warped_coordinates(
-                    fixed_images, moving_images
+                    f_imgs, m_imgs
                 ).detach()
             else:
                 # A prior stage (rigid/affine or deformable) already produced a
@@ -300,27 +298,26 @@ def run_registration(
                 # and compose. Used for linear->deformable too: composing the
                 # get_warped_coordinates() grid is exact for any prior transform,
                 # so a linear stage's matrix is never fed to init_affine.
+                if reextract_moving is None:
+                    raise ValueError(
+                        "A deformable stage warm-started from a prior transform "
+                        "requires a reextract_moving callback."
+                    )
                 composed = True
-                if reextract_moving is not None:
-                    prewarped_images = reextract_moving(warped_coordinates)
-                else:
-                    masked = stage["loss"].startswith("masked_")
-                    with torch.no_grad():
-                        prewarped = _warp_feature_tensor(
-                            moving_images(), warped_coordinates, masked
-                        )
-                    prewarped_images = FakeBatchedImages(prewarped, fixed_images)
+                prewarped_images = reextract_moving(warped_coordinates)
+                prewarped_images = _stage_images(
+                    prewarped_images, has_mask_channel, stage_masked
+                )
                 common["moving_images"] = prewarped_images
                 reg = GreedyRegistration(**common)
                 reg.optimize()
                 residual = reg.get_warped_coordinates(
-                    fixed_images, prewarped_images
+                    f_imgs, prewarped_images
                 ).detach()
                 warped_coordinates = _compose_grids(
                     warped_coordinates, residual
                 ).detach()
 
-            deformed = True
             num_deformable += 1
             stage_results.append(
                 StageResult("deformable", reg, True, composed)
