@@ -171,9 +171,12 @@ moved = F.grid_sample(mov.float(), grid, mode="bilinear", align_corners=True)
 ## Reproducing the ICLR'25 ConvexAdam results
 
 The ICLR'25 anatomix registration numbers came from a ConvexAdam backend, kept
-**unchanged** under `registration_backend/convexadam/` and demonstrated in
+unchanged under `registration_backend/convexadam/` and demonstrated in
 [`tutorials/anatomix_registration_convexadam.ipynb`](tutorials/anatomix_registration_convexadam.ipynb).
-No old-commit checkout or git tag is needed — import it directly
+
+This backend is no longer maintained and kept for legacy purposes. It will be removed in a future commit.
+
+Import it directly
 (`from anatomix.registration.registration_backend.convexadam import convex_adam`)
 or use its own `run_convex_adam_with_network_feats.py`. It is not exposed by the
 FireANTs-only `anatomix-register.py`.
@@ -182,11 +185,8 @@ FireANTs-only `anatomix-register.py`.
 
 Registration is performed by **FireANTs**
 ([repository](https://github.com/rohitrango/FireANTs),
-[documentation](https://fireants.readthedocs.io/en/latest/)); this project uses
-the [`neel-dey/FireANTs`](https://github.com/neel-dey/FireANTs) fork, installed
-separately under its own license — the custom **FireANTs License v1.0** (see
-`registration_backend/fireants/LICENSE`), which is more restrictive than
-Apache-2.0. If you use this backend, cite FireANTs:
+[documentation](https://fireants.readthedocs.io/en/latest/)); this project uses [my fork](https://github.com/neel-dey/FireANTs) fork. 
+If you use this backend in a paper, please cite FireANTs as well:
 
 ```bibtex
 @article{jena2024fireants,
@@ -206,3 +206,17 @@ Apache-2.0. If you use this backend, cite FireANTs:
 MIND-SSC follows Heinrich et al., MICCAI 2013. The retained ConvexAdam backend is
 a modified fork of the
 [ConvexAdam repository](https://github.com/multimodallearning/convexAdam).
+If you use the ConvexAdam backend in a paper, please cite ConvexAdam as well:
+
+```bibtex
+@article{siebert2024convexadam,
+  title={Convexadam: Self-configuring dual-optimization-based 3d multitask medical image registration},
+  author={Siebert, Hanna and Gro{\ss}br{\"o}hmer, Christoph and Hansen, Lasse and Heinrich, Mattias P},
+  journal={IEEE Transactions on Medical Imaging},
+  volume={44},
+  number={2},
+  pages={738--748},
+  year={2024},
+  publisher={IEEE}
+}
+```
