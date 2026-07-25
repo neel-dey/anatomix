@@ -8,6 +8,17 @@ normalized-coordinate ``[-1, 1]`` grid returned by
 ``get_warped_coordinates()`` -- as the one source of truth for warping, folds,
 and transform export.
 
+The moment initialization is computed from a separate pair of *intensity* images
+(``init_images``) rather than from the features being registered:
+``MomentsRegistration`` reduces a multi-channel image to a scalar "mass" field by
+summing over channels and dividing by that sum, which is only meaningful for a
+non-negative, intensity-like field. Feature channels do not satisfy that (MIND-SSC
+sums to a near-constant pedestal that is maximal in air, network features can sum
+negative, and ``standardized`` features sum to exactly zero), so a feature-based
+center of mass tracks the field of view rather than the anatomy. The resulting
+transform is a physical-space matrix, so it initializes the feature stages
+unchanged.
+
 Linear-stage chaining follows FireANTs' physical-space conventions:
 
 - moments -> rigid via ``init_translation`` + ``init_moment``;
@@ -174,7 +185,7 @@ def _compose_grids(grid_old, grid_residual):
 
 def run_registration(
     fixed_images, moving_images, stages, initialization="none", verbose=False,
-    reextract_moving=None, has_mask_channel=False,
+    reextract_moving=None, has_mask_channel=False, init_images=None,
 ):
     """Run the moment initialization and iterative stage chain.
 
@@ -204,6 +215,12 @@ def run_registration(
         Whether the feature images carry an appended mask channel (last channel).
         When True, that channel is stripped for any stage whose loss is unmasked
         so it never leaks into an unmasked objective.
+    init_images : (BatchedImages, BatchedImages), optional
+        Fixed/moving *intensity* images (non-negative, single-channel, on the
+        same geometry as the feature images) from which the moment
+        initialization is computed; required whenever ``initialization`` is not
+        ``'none'``. See the module docstring for why the features themselves are
+        not usable as a mass field.
 
     Returns
     -------
@@ -214,12 +231,21 @@ def run_registration(
 
     moments = None
     if initialization != "none":
+        if init_images is None:
+            raise ValueError(
+                f"initialization={initialization!r} requires init_images (the "
+                "intensity images the moments are computed from)."
+            )
         order = 1 if initialization == "center-of-mass" else 2
         if verbose:
             print(
                 f"  [init] MomentsRegistration (moments={order})", flush=True)
+        # Computed on intensities, not features: the moments are a mass-weighted
+        # centroid / covariance, which needs a non-negative intensity-like field.
+        # The result is a physical-space matrix, so it initializes the feature
+        # stages (and the snapshot below is on the feature geometry) unchanged.
         moments = MomentsRegistration(
-            scale=1, fixed_images=fixed_images, moving_images=moving_images,
+            scale=1, fixed_images=init_images[0], moving_images=init_images[1],
             moments=order,
         )
         moments.optimize()
@@ -263,10 +289,15 @@ def run_registration(
             else:
                 reg = AffineRegistration(**common, **init_kwargs)
             reg.optimize()
+            # Detached: stage k+1 initializes from this matrix and must never
+            # backpropagate into stage k. Without it, a rigid->rigid chain dies
+            # on its first backward, because RigidRegistration writes the
+            # initializer in place (``rotmat[..] = rotmat[..] @ self.moment``)
+            # into a view the previous stage's autograd graph still holds.
             cum_linear = (
                 reg.get_rigid_matrix() if kind == "rigid"
                 else reg.get_affine_matrix()
-            )
+            ).detach()
             warped_coordinates = reg.get_warped_coordinates(
                 f_imgs, m_imgs
             ).detach()

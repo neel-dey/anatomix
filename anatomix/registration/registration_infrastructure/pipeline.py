@@ -16,7 +16,7 @@ from collections import Counter
 import numpy as np
 import torch
 
-from ._fireants import FFO_AVAILABLE, apply_mask_to_image
+from ._fireants import FFO_AVAILABLE, FakeBatchedImages, apply_mask_to_image
 from .features import (
     combine_feature_channels,
     load_backbone,
@@ -81,6 +81,18 @@ def resolve_stage_losses(stages, has_masks):
             spec["loss"] = "masked_cc" if has_masks else "cc"
         resolved.append(spec)
     return resolved
+
+
+def _mass_image(normalized, mask):
+    """Non-negative, intensity-like volume for the moment initialization.
+
+    ``normalized`` is already min-max normalized to ``[0, 1]``. When a mask is
+    available the mass is restricted to it, so the center of mass follows the
+    anatomy of interest rather than everything inside the field of view.
+    """
+    if mask is None:
+        return normalized
+    return normalized * (mask > 0).to(normalized.dtype)
 
 
 def _validate_pair(pair, label):
@@ -180,6 +192,19 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, stem,
     fixed_batch = as_batch(fixed_img)
     moving_batch = as_batch(moving_img)
 
+    # The moment initialization is computed from the normalized intensities, not
+    # the features: it needs a non-negative "mass" field (see
+    # ``register.run_registration``). Same geometry, so the physical-space
+    # transform it returns initializes the feature stages directly.
+    init_batches = None
+    if args.initialization != "none":
+        init_batches = (
+            FakeBatchedImages(_mass_image(fixed_norm, fixed_mask_t),
+                              fixed_batch),
+            FakeBatchedImages(_mass_image(moving_norm, moving_mask_t),
+                              moving_batch),
+        )
+
     def reextract_moving(grid):
         """Warp the moving *image* by ``grid`` and re-extract features.
 
@@ -215,6 +240,7 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, stem,
         fixed_batch, moving_batch, stage_specs,
         initialization=args.initialization, verbose=args.verbose,
         reextract_moving=reextract_moving, has_mask_channel=any_masked,
+        init_images=init_batches,
     )
     grid = result.warped_coordinates
 
@@ -294,6 +320,11 @@ def run(args, pairs, input_columns, stages):
             flush=True,
         )
     device = select_device(args.device)
+    if device.type == "cuda":
+        # FireANTs allocates a few internal tensors on the *default* CUDA device
+        # ('cuda' with no index); make that the selected one so a multi-GPU box
+        # never touches a GPU the user did not ask for.
+        torch.cuda.set_device(device)
     if args.verbose:
         name = (
             f" ({torch.cuda.get_device_name(device)})"

@@ -87,7 +87,9 @@ def build_parser():
     tf.add_argument(
         "--initialization", choices=["none", "center-of-mass", "moments"],
         default="none",
-        help="Closed-form moment initialization run before the stage chain.",
+        help="Closed-form moment initialization run before the stage chain, "
+        "computed from the normalized intensity images (restricted to the "
+        "masks when given), not from the features.",
     )
     tf.add_argument(
         "--transform", default="deformable",
@@ -188,7 +190,9 @@ def build_parser():
         "--device", default="auto",
         help="Compute device: 'auto' (pick the visible CUDA device with the "
         "most free memory), 'cpu', 'cuda', or 'cuda:N'. Honors "
-        "CUDA_VISIBLE_DEVICES, which also restricts 'auto'.",
+        "CUDA_VISIBLE_DEVICES, which also restricts 'auto'. Note that N is a "
+        "CUDA index, which matches nvidia-smi's only when "
+        "CUDA_DEVICE_ORDER=PCI_BUS_ID is set.",
     )
     misc.add_argument(
         "--verbose", action=argparse.BooleanOptionalAction, default=True,

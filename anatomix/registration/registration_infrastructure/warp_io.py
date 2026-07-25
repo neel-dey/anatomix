@@ -23,8 +23,15 @@ from ._fireants import (
 
 
 def load_image(path, device, is_segmentation=False):
-    """Load a NIfTI volume as a FireANTs :class:`Image` on ``device``."""
-    return Image.load_file(path, is_segmentation=is_segmentation).to(device)
+    """Load a NIfTI volume as a FireANTs :class:`Image` on ``device``.
+
+    ``device`` is passed to the constructor rather than applied afterwards:
+    ``Image.to()`` moves only ``.array``, leaving the coordinate matrices
+    (``torch2phy``, ``phy2torch``, ...) on FireANTs' default ``'cuda'``. Building
+    on ``device`` keeps the array and its metadata together, so ``--device cpu``
+    and ``--device cuda:N`` work and nothing is allocated on an unselected GPU.
+    """
+    return Image.load_file(path, device=device, is_segmentation=is_segmentation)
 
 
 def as_batch(image):
