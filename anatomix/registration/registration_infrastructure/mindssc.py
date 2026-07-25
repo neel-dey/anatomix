@@ -6,12 +6,10 @@ contrast differences and therefore well suited to multi-modal registration
 (e.g. MR-to-CT). See Heinrich et al., MICCAI 2013
 (http://mpheinrich.de/pub/miccai2013_943_mheinrich.pdf).
 
-This is a self-contained copy of the descriptor used by the ConvexAdam backend
-(``registration_backend/convexadam/convex_adam_utils.py``). Two changes were
-made: every tensor is allocated on the *input's* device instead of a hard-coded
-``.cuda()``, and the default ``radius`` is 1 (matching the AbdomenMRCT reference
-pipeline) rather than the ConvexAdam copy's 2. For identical ``radius``/
-``dilation`` the numerical result is bit-identical to the original.
+Adapted from the ConvexAdam backend's copy
+(``registration_backend/convexadam/convex_adam_utils.py``): every tensor is
+allocated on the *input's* device rather than hard-coded to CUDA, and ``radius``
+defaults to 1.
 """
 import numpy as np
 import torch
@@ -51,7 +49,6 @@ def MINDSSC(img, radius=1, dilation=2):
         on ``img.device`` and returned in ``img.dtype``.
     radius : int, optional
         Radius of the self-similarity patch (patch side is ``2 * radius + 1``).
-        Default 1, matching the AbdomenMRCT reference pipeline.
     dilation : int, optional
         Dilation of the six-neighbourhood sampling pattern. Default 2.
 
@@ -97,8 +94,8 @@ def MINDSSC(img, radius=1, dilation=2):
         6, 1, 1,
     ).view(-1, 3)[mask, :]
 
-    # Kernels are scattered on CPU (with CPU index tensors) and then moved to the
-    # input's device, keeping the computation device-agnostic.
+    # Scattered on CPU (with CPU index tensors), then moved to the input's
+    # device, so the descriptor works on CPU and GPU alike.
     mshift1 = torch.zeros(12, 1, 3, 3, 3)
     mshift1.view(-1)[
         torch.arange(12) * 27

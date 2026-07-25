@@ -3,12 +3,11 @@
 This module defines the full command-line interface and resolves it into the
 inputs the pipeline consumes: a list of fixed/moving (and optional mask/seg)
 pairs, the per-stage registration specs, and the feature/output settings. It
-also holds every preflight check -- paths, each mask/segmentation against the
-geometry of its own image, and the stage schedules against the image sizes --
-so an input the backend cannot handle is rejected with a message naming the
-offending flag instead of failing opaquely after the model load. FireANTs is
-imported only lazily (inside :func:`main`, after all validation), so ``--help``
-and every argument/validation error work without the backend installed.
+also holds every preflight check: paths, each mask/segmentation against the
+geometry of its own image, and the stage schedules against the image sizes.
+FireANTs is imported only lazily (inside :func:`main`, after all validation),
+so ``--help`` and every argument/validation error work without the backend
+installed.
 """
 import argparse
 import os
@@ -22,15 +21,12 @@ TRANSFORM_RANK = {"rigid": 0, "affine": 1, "deformable": 2}
 VALID_LOSSES = {"cc", "mi", "mse", "masked_cc", "masked_mi", "masked_mse"}
 # Losses that consume a CC kernel schedule (auto default resolves to a CC loss).
 CC_LOSSES = {None, "cc", "masked_cc"}
-# FireANTs floors every pyramid level at this many voxels per axis
-# (``fireants/utils/globals.py::MIN_IMG_SIZE``, applied as
-# ``max(int(size / shrink), MIN_IMG_SIZE)``). Mirrored here so preflight can
-# check image sizes without importing the backend.
+# FireANTs floors every pyramid level at this many voxels per axis, as
+# ``max(int(size / shrink), MIN_IMG_SIZE)`` (fireants/utils/globals.py).
 MIN_IMG_SIZE = 32
-# Tolerance for comparing a mask/segmentation's voxel-to-world affine against
-# its image's: 1e-4 is far below any physically meaningful header difference
-# (0.1 um of origin, 6e-3 degrees of direction) and far above the round-trip
-# noise of writing the same geometry through a different tool.
+# Tolerance for a mask/segmentation's affine against its image's: below any
+# physically meaningful difference (0.1 um of origin, 6e-3 degrees of
+# direction), above the noise of a header round-tripped through another tool.
 GEOMETRY_ATOL = 1e-4
 
 
@@ -118,14 +114,14 @@ def build_parser():
     tf.add_argument(
         "--step-size", default=None,
         help="Per-stage Adam learning rate. Default 1.0 for deformable stages, "
-        "0.1 for rigid/affine stages.",
+        "0.01 for rigid/affine stages.",
     )
     tf.add_argument(
         "--shrink-factors", default=None,
         help="Per-stage 'AxBx...' resolution schedule, strictly decreasing. "
         "Every level is floored at 32 voxels per axis by the backend, so a "
         "multi-resolution schedule needs > 33 voxels on every axis. "
-        "Default 8x4x2x1.",
+        "Default 6x4x2x1.",
     )
     tf.add_argument(
         "--iterations", default=None,
@@ -299,12 +295,11 @@ def _split_stages(value, n, name):
 def _resolve_step_sizes(value, kinds, n):
     """Per-stage Adam learning rate.
 
-    When omitted, the default is stage-aware: 1.0 for deformable stages (the
-    SOTA setting) and 0.1 for the far more sensitive linear (rigid/affine)
-    stages, which diverge at a deformable-scale learning rate.
+    The default is stage-aware: 1.0 for deformable stages, and 0.01 for the far
+    more sensitive linear ones, which diverge at a deformable-scale rate.
     """
     if value is None:
-        return [1.0 if kinds[i] == "deformable" else 0.1 for i in range(n)]
+        return [1.0 if kinds[i] == "deformable" else 0.01 for i in range(n)]
     values = [float(p) for p in _split_stages(value, n, "--step-size")]
     if any(v <= 0 for v in values):
         raise ValueError("--step-size: values must be positive.")
@@ -312,14 +307,15 @@ def _resolve_step_sizes(value, kinds, n):
 
 
 def _resolve_shrink(value, n):
-    """Per-stage resolution schedule, validated as FireANTs requires it.
+    """Per-stage resolution schedule.
 
-    FireANTs' own ``_assert_check_scales_decreasing`` rejects a repeated level
-    (its test is ``scales[i] <= scales[i + 1]``), and it only runs once the
-    registration object is constructed -- i.e. after the backbone has loaded --
-    so the same *strictly* decreasing rule is enforced here instead.
+    Levels must be *strictly* decreasing: FireANTs rejects a repeated level,
+    but only once the registration object is built, long after the backbone has
+    loaded.
     """
-    tokens = ["8x4x2x1"] * n if value is None else _split_stages(
+    # 6 is the coarsest level the backend actually delivers on the 192x160x192
+    # reference data: anything coarser is clamped back to MIN_IMG_SIZE.
+    tokens = ["6x4x2x1"] * n if value is None else _split_stages(
         value, n, "--shrink-factors"
     )
     schedules = [_int_schedule(t, "--shrink-factors") for t in tokens]
@@ -354,9 +350,8 @@ def _resolve_iterations(value, n, shrinks):
 def _resolve_cc_kernels(value, losses, shrinks, n):
     is_cc = [losses[i] in CC_LOSSES for i in range(n)]
     if value is None:
-        # No schedule requested: leave each stage to FireANTs' own default CC
-        # kernel size. Task-appropriate schedules (which vary by dataset and
-        # pyramid) are passed explicitly via --cc-kernel-widths.
+        # No schedule requested: leave each stage on FireANTs' own default
+        # kernel size. Good schedules vary by dataset and pyramid.
         return [None] * n
     tokens = _split_stages(value, n, "--cc-kernel-widths")
     kernels = []
@@ -724,14 +719,11 @@ _AUX_IMAGE = {
 def validate_geometry(geometries):
     """Check that every mask/segmentation sits on the grid of its own image.
 
-    Masks and segmentations are consumed as bare arrays on their image's grid:
-    a mask multiplies (or is appended to) the feature volume voxel for voxel,
-    and a segmentation is resampled by a grid expressed in *its image's*
-    normalized coordinates. A differing grid is therefore never resampled, only
-    reinterpreted -- so a mismatched moving segmentation is warped from the
-    wrong physical locations and its Dice is silently meaningless, while a
-    mismatched mask fails much later inside FireANTs (and only when the loss is
-    masked), after the backbone and both feature extractions have run.
+    Masks and segmentations are consumed voxelwise and never resampled: a mask
+    gates the feature volume, and a segmentation is warped by a grid expressed
+    in *its image's* normalized coordinates. A differing grid is therefore
+    reinterpreted rather than resampled, putting the labels at the wrong
+    physical locations.
     """
     for index, geometry in enumerate(geometries):
         for aux, image in _AUX_IMAGE.items():
@@ -766,16 +758,13 @@ def _check_stage_size(role, shape, index, stage_index, stage):
     schedule = "x".join(str(s) for s in stage["shrink"])
 
     if any(s > 1 for s in stage["shrink"]):
-        # A level is resampled by FFT crop, which needs one voxel of margin on
-        # each side of the (floored) target size. Measured boundary: 34 voxels
-        # works, 33 and below either raise "Invalid number of data points (0)"
-        # or -- for linear stages -- silently return a truncated axis (a
-        # 24-voxel axis came back with 3) and register garbage. The pyramid
-        # *depth* does not matter: every level below the floor becomes the
-        # floor, which is why the shipped 8x4x2x1 default is fine on volumes
-        # far smaller than 8 * 32 voxels.
+        # Levels with shrink > 1 are resampled by an FFT crop, which needs one
+        # voxel of margin on each side of the floored target size. Below that
+        # the backend raises an opaque error, or silently truncates the axis to
+        # a handful of voxels and registers that. Pyramid depth is irrelevant:
+        # every level below the floor becomes the floor.
         if smallest < MIN_IMG_SIZE + 2:
-            # Dropping to a single resolution rescues the stage unless it is
+            # Dropping to one resolution rescues the stage unless it is
             # deformable and below the floor, where the warp field is the
             # problem (the branch below) and only more voxels can help.
             single_res_works = (
@@ -793,9 +782,8 @@ def _check_stage_size(role, shape, index, stage_index, stage):
                 f"{MIN_IMG_SIZE + 2}. {hint}"
             )
     elif stage["kind"] == "deformable":
-        # Single-resolution deformable: no downsampling happens, but the warp
-        # field is still allocated at max(size, MIN_IMG_SIZE) and then does not
-        # match the image.
+        # Nothing is resampled at shrink 1, but the warp field is still
+        # allocated at max(size, MIN_IMG_SIZE) and then mismatches the image.
         if smallest < MIN_IMG_SIZE:
             raise ValueError(
                 f"pair {index} [{role}]: {where}, but stage {stage_index} "
@@ -822,14 +810,10 @@ def _check_stage_size(role, shape, index, stage_index, stage):
 def validate_pyramid(geometries, stages):
     """Check every image size against every stage's pyramid and CC kernel.
 
-    FireANTs resamples each pyramid level to ``max(int(size / shrink),
-    MIN_IMG_SIZE)`` per axis, so an axis at or below that floor is not
-    downsampled but *replaced*, and the FFT resampler it uses then needs at
-    least two voxels of margin. Below that the backend fails with an error
-    naming neither the flag nor the cause (``Invalid number of data points
-    (0)``, or a fixed/moved shape mismatch) or, for linear stages, silently
-    truncates the volume. Both images of every pair are checked, since they are
-    floored independently and need not be the same size.
+    FireANTs resamples each level to ``max(int(size / shrink), MIN_IMG_SIZE)``
+    per axis, so an axis at or below the floor is replaced rather than
+    downsampled. Both images of a pair are checked: they are floored
+    independently and need not be the same size.
     """
     for index, geometry in enumerate(geometries):
         for role in ("fixed", "moving"):
@@ -839,12 +823,11 @@ def validate_pyramid(geometries, stages):
 
 
 def validate_pairs(pairs, stages):
-    """Pre-flight per-pair checks that must run before the backbone loads.
+    """Per-pair checks that must run before the backbone loads.
 
-    Catches the cases that would otherwise fail deep in the pipeline (after the
-    expensive model load, mid-batch): a missing required ``fixed``/``moving``
-    path, a lone mask, a fixed segmentation without a moving one, and an explicit
-    masked loss on a pair that has no masks.
+    A missing required ``fixed``/``moving`` path, a lone mask, a fixed
+    segmentation without a moving one, or an explicit masked loss on a pair
+    with no masks -- each would otherwise surface mid-batch.
     """
     explicit_masked = any(
         s["loss"] is not None and s["loss"].startswith("masked_") for s in stages

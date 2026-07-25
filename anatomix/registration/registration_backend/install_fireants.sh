@@ -14,9 +14,8 @@
 #   bash install_fireants.sh --no-fused-ops  # skip the fused-ops CUDA extension
 #
 # The fused-ops CUDA extension (module: fireants_fused_ops) is built by default
-# and REQUIRED FOR NOW for correct results: the current fork's pure-PyTorch
-# fallback has a multi-resolution FFT-downsampling issue that degrades accuracy
-# and introduces folds. Building it needs a CUDA toolkit whose version matches
+# and is a speed optimization: the pure-PyTorch fallback is numerically
+# equivalent, just slower. Building it needs a CUDA toolkit whose version matches
 # your PyTorch build (e.g. for a cu130 torch, point CUDA_HOME at a CUDA 13.x
 # toolkit and set TORCH_CUDA_ARCH_LIST to your GPU arch, e.g. 12.0 for Blackwell).
 set -euo pipefail
@@ -52,20 +51,16 @@ python -m pip install \
 
 # 4. Build the fused-ops CUDA extension (module: fireants_fused_ops) by default.
 if [ "${WITH_FUSED_OPS}" = "1" ]; then
-    echo ">> Building fused-ops CUDA extension (required for correct results)"
+    echo ">> Building fused-ops CUDA extension (faster; results are unchanged)"
     if ! ( cd "${CLONE}/fused_ops" && python setup.py build_ext && python setup.py install ); then
-        echo "!! WARNING: fused-ops build failed. FireANTs will fall back to its"
-        echo "!! pure-PyTorch path, which on the current fork is accuracy-degraded"
-        echo "!! (fold-heavy) -- SOTA reproduction requires the fused-ops kernels."
-        echo "!! Ensure a CUDA toolkit matching your torch build is available"
-        echo "!! (CUDA_HOME / TORCH_CUDA_ARCH_LIST) and re-run, or pass"
-        echo "!! --no-fused-ops to acknowledge the degraded fallback."
+        echo "!! WARNING: fused-ops build failed. FireANTs will use its"
+        echo "!! pure-PyTorch path, which is numerically equivalent but slower."
+        echo "!! To get the speedup, ensure a CUDA toolkit matching your torch"
+        echo "!! build is available (CUDA_HOME / TORCH_CUDA_ARCH_LIST) and re-run."
     fi
 else
     echo ">> Skipping fused-ops extension (--no-fused-ops)."
-    echo ">> NOTE: the pure-PyTorch fallback on the current fork is accuracy-"
-    echo ">> degraded (fold-heavy); the fused-ops kernels are required for now"
-    echo ">> for correct/SOTA results."
+    echo ">> The pure-PyTorch path is numerically equivalent, just slower."
 fi
 
 # 5. Smoke-import.

@@ -25,11 +25,9 @@ from ._fireants import (
 def load_image(path, device, is_segmentation=False):
     """Load a NIfTI volume as a FireANTs :class:`Image` on ``device``.
 
-    ``device`` is passed to the constructor rather than applied afterwards:
-    ``Image.to()`` moves only ``.array``, leaving the coordinate matrices
-    (``torch2phy``, ``phy2torch``, ...) on FireANTs' default ``'cuda'``. Building
-    on ``device`` keeps the array and its metadata together, so ``--device cpu``
-    and ``--device cuda:N`` work and nothing is allocated on an unselected GPU.
+    ``device`` goes to the constructor rather than a later ``.to()``, which
+    moves only ``.array`` and would leave the coordinate matrices
+    (``torch2phy``, ``phy2torch``, ...) on FireANTs' default ``'cuda'``.
     """
     return Image.load_file(path, device=device, is_segmentation=is_segmentation)
 
@@ -82,15 +80,13 @@ class _CumulativeWarp(DeformableMixin):
     """Present the canonical cumulative grid as a FireANTs deformable transform.
 
     FireANTs' ANTs/SciPy writers serialize a single stage's own ``{affine,
-    grid}``, where ``grid`` is a *displacement* and the full moving coordinates
-    are ``affine_grid(affine) + grid`` (see ``torch_affine_warp_3d``). A
-    *composed* multi-stage transform is not held by any single FireANTs object,
-    so it is presented here as an identity affine plus the displacement ``W -
-    identity_grid`` (``W`` = the canonical cumulative sampling grid). Substituting
-    this into FireANTs' own conversion yields exactly the physical (ANTs) / voxel
-    (SciPy) displacement it emits for a native single-stage warp -- the correct
-    cumulative transform, in FireANTs' own conventions -- so composed chains
-    export losslessly instead of dropping their linear component.
+    grid}``, where ``grid`` is a *displacement* and the moving coordinates are
+    ``affine_grid(affine) + grid``. No single FireANTs object holds a composed
+    multi-stage transform, so it is presented here as an identity affine plus
+    the displacement ``W - identity_grid`` (``W`` = the cumulative sampling
+    grid). Fed through FireANTs' own conversion that yields exactly the
+    displacement it writes for a native single-stage warp, so composed chains
+    export without dropping their linear component.
     """
 
     def __init__(self, grid, fixed_images, moving_images):
@@ -174,11 +170,10 @@ def save_transforms(
     one cumulative snapshot is written per stage (and after a non-``none``
     initialization).
 
-    All three conventions represent the full cumulative transform for every
-    chain, including composed (linear->deformable and repeated-deformable) ones:
-    ``pytorch`` saves the canonical sampling grid directly; ``ants``/``scipy``
-    use FireANTs' writers, and a composed deformable stage is routed through
-    :class:`_CumulativeWarp` so its linear/prior component is not dropped.
+    All three conventions carry the full cumulative transform for every chain,
+    composed ones included: ``pytorch`` saves the sampling grid directly, while
+    ``ants``/``scipy`` use FireANTs' writers with composed deformable stages
+    routed through :class:`_CumulativeWarp`.
 
     Returns
     -------

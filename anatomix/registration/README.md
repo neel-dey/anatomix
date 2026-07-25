@@ -24,22 +24,21 @@ clone of the author's fork:
 
 ```bash
 bash registration_backend/install_fireants.sh                 # full install, WITH fused-ops (recommended)
-bash registration_backend/install_fireants.sh --no-fused-ops  # skip fused-ops (degraded fallback)
+bash registration_backend/install_fireants.sh --no-fused-ops  # skip fused-ops (slower, same results)
 ```
 
-The fused-ops CUDA kernels are built **by default** and are **required for now**
-for correct results — on the current fork the pure-PyTorch fallback has a
-multi-resolution downsampling bug that lowers Dice and adds folds (the CLI warns
-at run time if the kernels aren't active). Compiling them needs a CUDA toolkit
-matching your PyTorch build (e.g. for a `cu130` torch, point `CUDA_HOME` at a CUDA
-13.x toolkit and set `TORCH_CUDA_ARCH_LIST` to your GPU arch, e.g. `12.0` for
-Blackwell). `scikit-learn` (for Dice) is already an anatomix dependency.
+The fused-ops CUDA kernels are built **by default** as a speed optimization; the
+pure-PyTorch fallback is numerically equivalent, so skipping them costs time, not
+accuracy. Compiling them needs a CUDA toolkit matching your PyTorch build (e.g.
+for a `cu130` torch, point `CUDA_HOME` at a CUDA 13.x toolkit and set
+`TORCH_CUDA_ARCH_LIST` to your GPU arch, e.g. `12.0` for Blackwell).
+`scikit-learn` (for Dice) is already an anatomix dependency.
 
 ## Reproduce the SOTA Learn2Reg-AbdomenMRCT result
 
 One command registers an MR→CT pair with the reference configuration
-(`anatomix-dev-vit` features, a single deformable `masked_cc` stage over an
-8→4→2→1 pyramid, dataset-tuned `21x13x11x9` CC kernels, masks, and labels):
+(`anatomix-dev-vit` features, a single deformable `masked_cc` stage over a
+6→4→2→1 pyramid, dataset-tuned `21x13x11x9` CC kernels, masks, and labels):
 
 ```bash
 python anatomix-register.py \
@@ -91,13 +90,16 @@ schedules are `AxBx...`. Defaults reproduce the SOTA single-deformable setup:
 | `--transform` | the stage chain | `deformable` |
 | `--initialization` | closed-form `center-of-mass` / `moments` before the chain | `none` |
 | `--loss` | `cc,mi,mse,masked_cc,masked_mi,masked_mse` per stage | `masked_cc` if masks else `cc` |
-| `--step-size` | Adam LR per stage | `1.0` deformable / `0.1` linear |
-| `--shrink-factors` | resolution schedule per stage | `8x4x2x1` |
+| `--step-size` | Adam LR per stage | `1.0` deformable / `0.01` linear |
+| `--shrink-factors` | resolution schedule per stage | `6x4x2x1` |
 | `--iterations` | iters per level (matches shrink) | `100` per level |
 | `--cc-kernel-widths` | odd CC widths per level (`na` for non-CC stages) | FireANTs' default kernel |
 | `--smooth-grad-sigma` / `--smooth-warp-sigma` | deformable regularization (`na` for linear) | `1.0` / `0.5` |
 
-Pyramid schedules must be **strictly decreasing**.
+Pyramid schedules must be **strictly decreasing**. Every level is floored at 32
+voxels per axis by the backend, so the default's coarsest level is 32³ on the
+reference data — see `FIREANTS_SIZE_REQUIREMENTS.md` for the size limits this
+implies.
 
 **Features** — `--backbone {anatomix, anatomix-dev, anatomix-dev-vit (default),
 custom}`. Features are (by default) extracted on an isotropic grid

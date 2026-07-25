@@ -30,12 +30,10 @@ Run ``python anatomix-register.py --help`` for the full interface.
 
 Reproducing the ICLR'25 ConvexAdam results
 ------------------------------------------
-The original ConvexAdam backend that produced the anatomix ICLR'25 registration
-numbers is retained in this checkout under
-``registration_backend/convexadam/`` and demonstrated in the
-``tutorials/anatomix_registration_convexadam.ipynb`` notebook. It is not exposed
-by this CLI; use that backend/notebook directly. No old-commit checkout is
-required.
+The ConvexAdam backend that produced the anatomix ICLR'25 registration numbers
+lives under ``registration_backend/convexadam/`` and is demonstrated in
+``tutorials/anatomix_registration_convexadam.ipynb``. It is not exposed by this
+CLI; use that backend and notebook directly.
 """
 from anatomix.registration.registration_infrastructure.cli import main
 

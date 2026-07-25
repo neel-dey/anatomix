@@ -1,7 +1,7 @@
 """Feature preparation for the FireANTs registration backend.
 
-This module turns a pair of 3D volumes into the multi-channel feature tensors
-that FireANTs registers. The steps mirror the AbdomenMRCT reference pipeline:
+This module turns a 3D volume into the multi-channel feature tensor that
+FireANTs registers:
 
 1. per-image intensity clip + min-max normalization to ``[0, 1]``;
 2. (optionally) resample to an isotropic grid at the finest voxel spacing before
@@ -314,9 +314,9 @@ def prepare_feature_channels(
 def combine_feature_channels(feats, mind, mask, use_mindssc):
     """Mask and concatenate the selected feature families.
 
-    When a mask is supplied it multiplies the *network* features only (MIND-SSC
-    is left unmasked), matching the reference pipeline. The channel order for
-    ``'both'`` is network features followed by MIND-SSC.
+    When a mask is supplied it multiplies the *network* features only; MIND-SSC
+    is left unmasked. The channel order for ``'both'`` is network features
+    followed by MIND-SSC.
 
     Parameters
     ----------

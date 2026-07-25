@@ -192,10 +192,9 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, stem,
     fixed_batch = as_batch(fixed_img)
     moving_batch = as_batch(moving_img)
 
-    # The moment initialization is computed from the normalized intensities, not
-    # the features: it needs a non-negative "mass" field (see
-    # ``register.run_registration``). Same geometry, so the physical-space
-    # transform it returns initializes the feature stages directly.
+    # The moment initialization needs a non-negative mass field, so it runs on
+    # the intensities rather than the features (see ``register``). Same
+    # geometry, so its physical-space transform initializes the stages directly.
     init_batches = None
     if args.initialization != "none":
         init_batches = (
@@ -208,12 +207,11 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, stem,
     def reextract_moving(grid):
         """Warp the moving *image* by ``grid`` and re-extract features.
 
-        A deformable stage that is warm-started from a prior transform (a linear
-        stage or an earlier deformable stage) needs the moving features in the
-        already-transformed frame. Because the anatomix extractor is not warp-
-        equivariant, the features are recomputed from the warped moving *image*
-        (and mask), not resampled from the moving feature maps. The warped moving
-        image lives on the fixed grid, so the result carries the fixed geometry.
+        A warm-started deformable stage needs the moving features in the
+        already-transformed frame. The anatomix extractor is not
+        warp-equivariant, so they are recomputed from the warped moving image
+        (and mask) rather than resampled from the moving feature maps. The
+        result lives on the fixed grid and carries the fixed geometry.
         """
         with torch.no_grad():
             warped_norm = warp_volume(moving_norm, grid, "bilinear")
@@ -311,19 +309,15 @@ def run(args, pairs, input_columns, stages):
     seed_everything(args.seed)
     if not FFO_AVAILABLE:
         print(
-            "[warning] fireants_fused_ops is not available; FireANTs is using "
-            "its pure-PyTorch fallback. On the stock fork this path has a "
-            "multi-resolution downsampling bug that degrades accuracy and adds "
-            "folds, so the fused-ops kernels must be used for now for correct/"
-            "SOTA results. Build them with "
-            "registration_backend/install_fireants.sh.",
+            "[note] fireants_fused_ops is not available; FireANTs is using its "
+            "pure-PyTorch fallback, which is numerically equivalent but slower. "
+            "Build the kernels with registration_backend/install_fireants.sh.",
             flush=True,
         )
     device = select_device(args.device)
     if device.type == "cuda":
-        # FireANTs allocates a few internal tensors on the *default* CUDA device
-        # ('cuda' with no index); make that the selected one so a multi-GPU box
-        # never touches a GPU the user did not ask for.
+        # FireANTs allocates some internal tensors on the *default* CUDA device,
+        # so make that the selected one rather than an unrelated GPU.
         torch.cuda.set_device(device)
     if args.verbose:
         name = (
@@ -359,9 +353,8 @@ def run(args, pairs, input_columns, stages):
     os.makedirs(args.output_dir, exist_ok=True)
     prefix = f"{args.exp_name}-" if args.exp_name else ""
 
-    # Output stems come from the moving basename; disambiguate collisions (same
-    # basename across different directories) with a zero-padded pair index so
-    # outputs never overwrite each other.
+    # Output stems come from the moving basename, with a zero-padded pair index
+    # added when the same basename appears in more than one directory.
     raw_stems = [strip_nifti_ext(pair["moving"]) for pair in pairs]
     counts = Counter(raw_stems)
     width = max(1, len(str(len(pairs) - 1)))

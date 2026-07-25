@@ -4,40 +4,31 @@ Given a fixed/moving pair of multi-channel feature images (FireANTs
 ``BatchedImages``), this module runs an optional moment initialization followed
 by a chain of iterative stages (``rigid`` -> ``affine`` -> ``deformable``) and
 maintains a single *canonical cumulative sampling grid* -- the fixed-to-moving,
-normalized-coordinate ``[-1, 1]`` grid returned by
-``get_warped_coordinates()`` -- as the one source of truth for warping, folds,
-and transform export.
+normalized ``[-1, 1]`` grid returned by ``get_warped_coordinates()`` -- as the
+one source of truth for warping, folds, and transform export.
 
-The moment initialization is computed from a separate pair of *intensity* images
-(``init_images``) rather than from the features being registered:
-``MomentsRegistration`` reduces a multi-channel image to a scalar "mass" field by
-summing over channels and dividing by that sum, which is only meaningful for a
-non-negative, intensity-like field. Feature channels do not satisfy that (MIND-SSC
-sums to a near-constant pedestal that is maximal in air, network features can sum
-negative, and ``standardized`` features sum to exactly zero), so a feature-based
-center of mass tracks the field of view rather than the anatomy. The resulting
-transform is a physical-space matrix, so it initializes the feature stages
-unchanged.
+The moment initialization is computed from a separate pair of *intensity*
+images (``init_images``), not from the features: ``MomentsRegistration`` reduces
+a multi-channel image to a scalar mass field by summing over channels, which is
+meaningful only for a non-negative, intensity-like field. It returns a
+physical-space matrix, so it initializes the feature stages unchanged.
 
-Linear-stage chaining follows FireANTs' physical-space conventions:
+Linear stages chain in FireANTs' physical-space conventions:
 
 - moments -> rigid via ``init_translation`` + ``init_moment``;
 - moments -> affine via the moment affine (``init_rigid``);
 - rigid -> affine via ``get_rigid_matrix()``; affine -> affine via
-  ``get_affine_matrix()`` (both physical ``y = Ax + t``), fed as the next stage's
-  linear initializer.
+  ``get_affine_matrix()`` (both physical ``y = Ax + t``), fed as the next
+  stage's linear initializer.
 
-A ``GreedyRegistration`` (deformable) stage that is warm-started from *any* prior
-transform -- a linear stage or an earlier deformable stage -- is handled by
-**warping the moving image by the running cumulative grid and re-extracting
-features** on the fixed grid (via a ``reextract_moving`` callback), then
-optimizing an identity-initialized residual deformation and composing the
-coordinate fields ``T_new(x) = T_old(T_residual(x))``. Re-extraction (rather than
-resampling the moving feature maps, or feeding a linear stage's matrix as
-``init_affine``) is required because the anatomix feature extractor is not
-warp-equivariant: features must be recomputed from the warped image to stay
-consistent. The first (un-warm-started) deformable optimizes directly and, after
-a moment initialization, may use the moment affine as ``init_affine``.
+A deformable stage warm-started from any prior transform -- linear or
+deformable -- warps the moving image by the running cumulative grid and
+**re-extracts features** on the fixed grid (the ``reextract_moving`` callback),
+then optimizes an identity-initialized residual and composes the coordinate
+fields ``T_new(x) = T_old(T_residual(x))``. Re-extraction is required because
+the anatomix extractor is not warp-equivariant: features must be recomputed
+from the warped image, not resampled. The first deformable stage optimizes
+directly and may take the moment affine as ``init_affine``.
 """
 from collections import namedtuple
 
@@ -51,10 +42,9 @@ from ._fireants import (
     RigidRegistration,
 )
 
-# One entry per executed stage (including a leading 'init' moment stage when an
-# initialization is requested). ``composed`` marks a repeated deformable stage
-# whose FireANTs transform is only the residual (its cumulative transform lives
-# in the canonical grid, not in the FireANTs object).
+# One entry per executed stage, including a leading 'init' moment stage.
+# ``composed`` marks a deformable stage whose FireANTs object holds only the
+# residual; its cumulative transform lives in the canonical grid.
 StageResult = namedtuple(
     "StageResult", ["name", "registration", "is_deformable", "composed"]
 )
@@ -240,10 +230,6 @@ def run_registration(
         if verbose:
             print(
                 f"  [init] MomentsRegistration (moments={order})", flush=True)
-        # Computed on intensities, not features: the moments are a mass-weighted
-        # centroid / covariance, which needs a non-negative intensity-like field.
-        # The result is a physical-space matrix, so it initializes the feature
-        # stages (and the snapshot below is on the feature geometry) unchanged.
         moments = MomentsRegistration(
             scale=1, fixed_images=init_images[0], moving_images=init_images[1],
             moments=order,
@@ -269,8 +255,6 @@ def run_registration(
         kind = stage["kind"]
         label = f"{index}-{kind}"
         stage_masked = stage["loss"].startswith("masked_")
-        # Feed each stage only the channels its loss consumes: strip the appended
-        # mask channel for an unmasked stage so it never enters that objective.
         f_imgs = _stage_images(fixed_images, has_mask_channel, stage_masked)
         m_imgs = _stage_images(moving_images, has_mask_channel, stage_masked)
         if verbose:
@@ -289,11 +273,9 @@ def run_registration(
             else:
                 reg = AffineRegistration(**common, **init_kwargs)
             reg.optimize()
-            # Detached: stage k+1 initializes from this matrix and must never
-            # backpropagate into stage k. Without it, a rigid->rigid chain dies
-            # on its first backward, because RigidRegistration writes the
-            # initializer in place (``rotmat[..] = rotmat[..] @ self.moment``)
-            # into a view the previous stage's autograd graph still holds.
+            # Detached: the next stage initializes from this matrix and must not
+            # backpropagate into this one. FireANTs writes the initializer in
+            # place, into a view this stage's autograd graph still holds.
             cum_linear = (
                 reg.get_rigid_matrix() if kind == "rigid"
                 else reg.get_affine_matrix()
@@ -311,7 +293,7 @@ def run_registration(
             composed = False
 
             if warped_coordinates is None:
-                # First transform stage; optionally warm-started from a moment affine.
+                # First transform stage, optionally from a moment affine.
                 init_affine = _greedy_init_affine(moments, cum_linear, first)
                 if init_affine is not None:
                     common["init_affine"] = init_affine
@@ -321,14 +303,11 @@ def run_registration(
                     f_imgs, m_imgs
                 ).detach()
             else:
-                # A prior stage (rigid/affine or deformable) already produced a
-                # cumulative fixed->moving grid. Warp the moving image by it and
-                # RE-EXTRACT features (the anatomix extractor is not warp-
-                # equivariant, so features must be recomputed from the warped
-                # image, not resampled), optimize an identity-initialized residual,
-                # and compose. Used for linear->deformable too: composing the
-                # get_warped_coordinates() grid is exact for any prior transform,
-                # so a linear stage's matrix is never fed to init_affine.
+                # A prior stage already produced a cumulative fixed->moving grid.
+                # Warp the moving image by it, re-extract features, optimize an
+                # identity-initialized residual, and compose. This path also
+                # serves linear->deformable: composing the grid is exact for any
+                # prior transform, so a linear matrix never goes to init_affine.
                 if reextract_moving is None:
                     raise ValueError(
                         "A deformable stage warm-started from a prior transform "

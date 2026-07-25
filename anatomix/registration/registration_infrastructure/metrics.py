@@ -44,9 +44,8 @@ def count_folds(warped_coordinates):
     Returns
     -------
     int
-        Number of interior voxels whose Jacobian determinant is ``<= 0``. The
-        one-voxel border is excluded before the determinant, following the
-        reference implementation.
+        Number of interior voxels whose Jacobian determinant is ``<= 0``; the
+        one-voxel border is excluded before the determinant.
     """
     jac = jacobian(warped_coordinates).permute(0, 2, 3, 4, 1, 5)
     jac = jac[:, 1:-1, 1:-1, 1:-1, :]
