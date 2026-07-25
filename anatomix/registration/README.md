@@ -77,7 +77,9 @@ does not reach zero folds).
 **Masks and labels** — provide **both** masks or neither. Masks gate the network
 features and, for a `masked_*` loss, become FireANTs' loss mask. A **moving**
 segmentation is required to warp labels; add a **fixed** segmentation to also get
-Dice (background label 0 excluded).
+Dice (background label 0 excluded). Each mask/segmentation must be on **its own
+image's grid** (same shape and voxel-to-world affine) — it is consumed voxelwise,
+never resampled — and this is checked from the headers before anything loads.
 
 **The transform chain** — `--transform` is a comma-separated list of stages from
 `{rigid,affine,deformable}`, ordered `rigid ≤ affine ≤ deformable` (repeated
@@ -94,6 +96,8 @@ schedules are `AxBx...`. Defaults reproduce the SOTA single-deformable setup:
 | `--iterations` | iters per level (matches shrink) | `100` per level |
 | `--cc-kernel-widths` | odd CC widths per level (`na` for non-CC stages) | FireANTs' default kernel |
 | `--smooth-grad-sigma` / `--smooth-warp-sigma` | deformable regularization (`na` for linear) | `1.0` / `0.5` |
+
+Pyramid schedules must be **strictly decreasing**.
 
 **Features** — `--backbone {anatomix, anatomix-dev, anatomix-dev-vit (default),
 custom}`. Features are (by default) extracted on an isotropic grid

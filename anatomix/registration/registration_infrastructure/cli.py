@@ -2,15 +2,19 @@
 
 This module defines the full command-line interface and resolves it into the
 inputs the pipeline consumes: a list of fixed/moving (and optional mask/seg)
-pairs, the per-stage registration specs, and the feature/output settings.
-FireANTs is imported only lazily (inside :func:`main`, after all validation),
-so ``--help`` and every argument/validation error work without the backend
-installed.
+pairs, the per-stage registration specs, and the feature/output settings. It
+also holds every preflight check -- paths, each mask/segmentation against the
+geometry of its own image, and the stage schedules against the image sizes --
+so an input the backend cannot handle is rejected with a message naming the
+offending flag instead of failing opaquely after the model load. FireANTs is
+imported only lazily (inside :func:`main`, after all validation), so ``--help``
+and every argument/validation error work without the backend installed.
 """
 import argparse
 import os
 
 import nibabel as nib
+import numpy as np
 
 from .io_utils import NIFTI_EXTS, VOLUME_COLUMNS, read_pairs_csv
 
@@ -18,6 +22,16 @@ TRANSFORM_RANK = {"rigid": 0, "affine": 1, "deformable": 2}
 VALID_LOSSES = {"cc", "mi", "mse", "masked_cc", "masked_mi", "masked_mse"}
 # Losses that consume a CC kernel schedule (auto default resolves to a CC loss).
 CC_LOSSES = {None, "cc", "masked_cc"}
+# FireANTs floors every pyramid level at this many voxels per axis
+# (``fireants/utils/globals.py::MIN_IMG_SIZE``, applied as
+# ``max(int(size / shrink), MIN_IMG_SIZE)``). Mirrored here so preflight can
+# check image sizes without importing the backend.
+MIN_IMG_SIZE = 32
+# Tolerance for comparing a mask/segmentation's voxel-to-world affine against
+# its image's: 1e-4 is far below any physically meaningful header difference
+# (0.1 um of origin, 6e-3 degrees of direction) and far above the round-trip
+# noise of writing the same geometry through a different tool.
+GEOMETRY_ATOL = 1e-4
 
 
 # --------------------------------------------------------------------------- #
@@ -108,7 +122,10 @@ def build_parser():
     )
     tf.add_argument(
         "--shrink-factors", default=None,
-        help="Per-stage 'AxBx...' resolution schedule. Default 8x4x2x1.",
+        help="Per-stage 'AxBx...' resolution schedule, strictly decreasing. "
+        "Every level is floored at 32 voxels per axis by the backend, so a "
+        "multi-resolution schedule needs > 33 voxels on every axis. "
+        "Default 8x4x2x1.",
     )
     tf.add_argument(
         "--iterations", default=None,
@@ -295,6 +312,13 @@ def _resolve_step_sizes(value, kinds, n):
 
 
 def _resolve_shrink(value, n):
+    """Per-stage resolution schedule, validated as FireANTs requires it.
+
+    FireANTs' own ``_assert_check_scales_decreasing`` rejects a repeated level
+    (its test is ``scales[i] <= scales[i + 1]``), and it only runs once the
+    registration object is constructed -- i.e. after the backbone has loaded --
+    so the same *strictly* decreasing rule is enforced here instead.
+    """
     tokens = ["8x4x2x1"] * n if value is None else _split_stages(
         value, n, "--shrink-factors"
     )
@@ -302,10 +326,10 @@ def _resolve_shrink(value, n):
     for sched in schedules:
         if any(s <= 0 for s in sched):
             raise ValueError("--shrink-factors: values must be positive.")
-        if any(b > a for a, b in zip(sched, sched[1:])):
+        if any(b >= a for a, b in zip(sched, sched[1:])):
             raise ValueError(
-                "--shrink-factors: each schedule must be monotonically "
-                f"non-increasing, got {sched}."
+                "--shrink-factors: each schedule must be strictly decreasing, "
+                f"got {sched}."
             )
     return schedules
 
@@ -647,12 +671,18 @@ def resolve_inputs(args):
     return rows, columns
 
 
-def _validate_volume(path, role):
+def _volume_geometry(path, role):
+    """Validate one volume path and return its ``(spatial_shape, affine)``.
+
+    Header-only (nibabel loads lazily), so preflight stays cheap even for a
+    large batch and needs neither the GPU nor the FireANTs backend.
+    """
     if not os.path.isfile(path):
         raise ValueError(f"{role}: file not found: {path}")
     if not path.endswith(NIFTI_EXTS):
         raise ValueError(f"{role}: expected a .nii/.nii.gz file: {path}")
-    shape = nib.load(path).header.get_data_shape()
+    image = nib.load(path)
+    shape = image.header.get_data_shape()
     if len(shape) < 3:
         raise ValueError(
             f"{role}: expected a 3D volume, got shape {tuple(shape)}.")
@@ -660,14 +690,152 @@ def _validate_volume(path, role):
         raise ValueError(
             f"{role}: expected a single-channel 3D volume, got {tuple(shape)}."
         )
+    return tuple(int(d) for d in shape[:3]), image.affine
 
 
 def validate_volumes(pairs):
+    """Validate every volume path and collect the geometries.
+
+    Returns
+    -------
+    list of dict
+        One dict per pair, mapping each present volume column to its
+        ``(spatial_shape, affine)``; consumed by :func:`validate_geometry` and
+        :func:`validate_pyramid`.
+    """
+    geometries = []
     for index, pair in enumerate(pairs):
+        geometry = {}
         for col in VOLUME_COLUMNS:
             path = pair.get(col)
             if path is not None:
-                _validate_volume(path, f"pair {index} [{col}]")
+                geometry[col] = _volume_geometry(path, f"pair {index} [{col}]")
+        geometries.append(geometry)
+    return geometries
+
+
+# Each auxiliary volume is consumed on the grid of exactly one image.
+_AUX_IMAGE = {
+    "fixed_mask": "fixed", "fixed_seg": "fixed",
+    "moving_mask": "moving", "moving_seg": "moving",
+}
+
+
+def validate_geometry(geometries):
+    """Check that every mask/segmentation sits on the grid of its own image.
+
+    Masks and segmentations are consumed as bare arrays on their image's grid:
+    a mask multiplies (or is appended to) the feature volume voxel for voxel,
+    and a segmentation is resampled by a grid expressed in *its image's*
+    normalized coordinates. A differing grid is therefore never resampled, only
+    reinterpreted -- so a mismatched moving segmentation is warped from the
+    wrong physical locations and its Dice is silently meaningless, while a
+    mismatched mask fails much later inside FireANTs (and only when the loss is
+    masked), after the backbone and both feature extractions have run.
+    """
+    for index, geometry in enumerate(geometries):
+        for aux, image in _AUX_IMAGE.items():
+            if aux not in geometry or image not in geometry:
+                continue
+            aux_shape, aux_affine = geometry[aux]
+            image_shape, image_affine = geometry[image]
+            if aux_shape != image_shape:
+                raise ValueError(
+                    f"pair {index} [{aux}]: shape {aux_shape} does not match "
+                    f"[{image}] {image_shape}; resample it onto the {image} "
+                    "image's grid first."
+                )
+            if not np.allclose(
+                aux_affine, image_affine, rtol=0.0, atol=GEOMETRY_ATOL,
+            ):
+                worst = float(np.max(np.abs(aux_affine - image_affine)))
+                raise ValueError(
+                    f"pair {index} [{aux}]: voxel-to-world affine differs from "
+                    f"[{image}] by up to {worst:.3g} (tolerance "
+                    f"{GEOMETRY_ATOL:g}), so it would be applied at the wrong "
+                    f"physical locations; resample it onto the {image} image's "
+                    "grid first."
+                )
+
+
+def _check_stage_size(role, shape, index, stage_index, stage):
+    """Check one image's size against one stage's pyramid and CC kernel."""
+    smallest = min(shape)
+    axis = shape.index(smallest)
+    where = f"axis {axis} of {shape} has {smallest} voxels"
+    schedule = "x".join(str(s) for s in stage["shrink"])
+
+    if any(s > 1 for s in stage["shrink"]):
+        # A level is resampled by FFT crop, which needs one voxel of margin on
+        # each side of the (floored) target size. Measured boundary: 34 voxels
+        # works, 33 and below either raise "Invalid number of data points (0)"
+        # or -- for linear stages -- silently return a truncated axis (a
+        # 24-voxel axis came back with 3) and register garbage. The pyramid
+        # *depth* does not matter: every level below the floor becomes the
+        # floor, which is why the shipped 8x4x2x1 default is fine on volumes
+        # far smaller than 8 * 32 voxels.
+        if smallest < MIN_IMG_SIZE + 2:
+            # Dropping to a single resolution rescues the stage unless it is
+            # deformable and below the floor, where the warp field is the
+            # problem (the branch below) and only more voxels can help.
+            single_res_works = (
+                stage["kind"] != "deformable" or smallest >= MIN_IMG_SIZE
+            )
+            hint = (
+                "Use --shrink-factors 1 for this stage, or resample the volume."
+                if single_res_works else "Resample or pad the volume."
+            )
+            raise ValueError(
+                f"pair {index} [{role}]: {where}, but stage {stage_index} "
+                f"({stage['kind']}, --shrink-factors {schedule}) is "
+                f"multi-resolution and the backend floors every level at "
+                f"{MIN_IMG_SIZE} voxels per axis, so it needs at least "
+                f"{MIN_IMG_SIZE + 2}. {hint}"
+            )
+    elif stage["kind"] == "deformable":
+        # Single-resolution deformable: no downsampling happens, but the warp
+        # field is still allocated at max(size, MIN_IMG_SIZE) and then does not
+        # match the image.
+        if smallest < MIN_IMG_SIZE:
+            raise ValueError(
+                f"pair {index} [{role}]: {where}, but stage {stage_index} "
+                f"(deformable) allocates its warp field at no fewer than "
+                f"{MIN_IMG_SIZE} voxels per axis, so it needs at least "
+                f"{MIN_IMG_SIZE}. Resample or pad the volume."
+            )
+
+    if stage["cc_kernel"] is None:
+        return
+    for level, (scale, width) in enumerate(
+        zip(stage["shrink"], stage["cc_kernel"])
+    ):
+        level_size = max(smallest // scale, MIN_IMG_SIZE)
+        if width > level_size:
+            raise ValueError(
+                f"pair {index} [{role}]: --cc-kernel-widths stage "
+                f"{stage_index} level {level} is {width} voxels, but at shrink "
+                f"{scale} the smallest axis (axis {axis} of {shape}) is only "
+                f"{level_size}. The CC window must fit inside the image."
+            )
+
+
+def validate_pyramid(geometries, stages):
+    """Check every image size against every stage's pyramid and CC kernel.
+
+    FireANTs resamples each pyramid level to ``max(int(size / shrink),
+    MIN_IMG_SIZE)`` per axis, so an axis at or below that floor is not
+    downsampled but *replaced*, and the FFT resampler it uses then needs at
+    least two voxels of margin. Below that the backend fails with an error
+    naming neither the flag nor the cause (``Invalid number of data points
+    (0)``, or a fixed/moved shape mismatch) or, for linear stages, silently
+    truncates the volume. Both images of every pair are checked, since they are
+    floored independently and need not be the same size.
+    """
+    for index, geometry in enumerate(geometries):
+        for role in ("fixed", "moving"):
+            shape = geometry[role][0]
+            for stage_index, stage in enumerate(stages):
+                _check_stage_size(role, shape, index, stage_index, stage)
 
 
 def validate_pairs(pairs, stages):
@@ -734,8 +902,10 @@ def main(argv=None):
         stages = build_stages(args)
         validate_device(args.device)
         pairs, input_columns = resolve_inputs(args)
-        validate_volumes(pairs)
+        geometries = validate_volumes(pairs)
         validate_pairs(pairs, stages)
+        validate_geometry(geometries)
+        validate_pyramid(geometries, stages)
     except ValueError as error:
         parser.error(str(error))
 
