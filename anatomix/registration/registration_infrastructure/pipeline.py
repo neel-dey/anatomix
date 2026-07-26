@@ -150,9 +150,11 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, stem,
 
     fixed_norm = minmax_normalize(
         fixed_img.array, args.fixed_minclip, args.fixed_maxclip,
+        name=f"{label} [fixed]",
     )
     moving_norm = minmax_normalize(
         moving_img.array, args.moving_minclip, args.moving_maxclip,
+        name=f"{label} [moving]",
     )
 
     fixed_mask_img = moving_mask_img = None

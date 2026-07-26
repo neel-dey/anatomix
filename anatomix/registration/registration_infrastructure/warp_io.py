@@ -131,11 +131,13 @@ def _linear_matrix(stage):
 def _save_one(stage, grid, convention, base, fixed_images, moving_images):
     """Save one stage's cumulative transform in the requested convention.
 
-    ``grid`` is the cumulative sampling grid up to (and including) ``stage``. A
-    *composed* deformable stage is exported through :class:`_CumulativeWarp` (its
-    FireANTs object holds only the residual); every other stage is exported by
-    its own FireANTs writer, which already holds the cumulative transform (a
-    linear ``.mat``, or a native deformable displacement field).
+    ``grid`` is the cumulative sampling grid up to (and including) ``stage``.
+    Every deformable stage is exported through :class:`_CumulativeWarp`, which
+    carries the cumulative transform and the pair's real :class:`BatchedImages`;
+    a stage's own FireANTs object may hold only a residual, and in a partly
+    masked chain its images are a ``FakeBatchedImages`` that FireANTs' ANTs
+    writer cannot read geometry from. Linear stages keep their native writers (a
+    ``.mat`` or the raw matrix), which need no image geometry.
     """
     if convention == "pytorch":
         torch.save(grid.detach().cpu(), base + ".pt")
@@ -143,7 +145,7 @@ def _save_one(stage, grid, convention, base, fixed_images, moving_images):
     if convention not in ("ants", "scipy"):
         raise ValueError(f"Unknown transform convention {convention!r}.")
 
-    if stage.composed:
+    if stage.is_deformable:
         warp = _CumulativeWarp(grid, fixed_images, moving_images)
         if convention == "ants":
             warp.save_as_ants_transforms(base + ".nii.gz")
@@ -152,10 +154,7 @@ def _save_one(stage, grid, convention, base, fixed_images, moving_images):
         return
 
     if convention == "ants":
-        ext = ".nii.gz" if stage.is_deformable else ".mat"
-        stage.registration.save_as_ants_transforms(base + ext)
-    elif stage.is_deformable:
-        stage.registration.save_as_scipy_transforms(base + ".npz")
+        stage.registration.save_as_ants_transforms(base + ".mat")
     else:
         matrix = _linear_matrix(stage).detach().cpu().numpy()
         np.savez(base + ".npz", affine=matrix)

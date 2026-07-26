@@ -89,7 +89,7 @@ def load_backbone(
     return model
 
 
-def minmax_normalize(arr, minclip=None, maxclip=None):
+def minmax_normalize(arr, minclip=None, maxclip=None, name="Image"):
     """Clip and min-max normalize a volume to ``[0, 1]``.
 
     Parameters
@@ -99,6 +99,8 @@ def minmax_normalize(arr, minclip=None, maxclip=None):
     minclip, maxclip : float, optional
         Lower / upper intensity clip bounds applied before normalization. If
         both are given, ``minclip`` must be strictly below ``maxclip``.
+    name : str, optional
+        How to refer to this volume in error messages.
 
     Returns
     -------
@@ -108,11 +110,20 @@ def minmax_normalize(arr, minclip=None, maxclip=None):
     Raises
     ------
     ValueError
-        If the volume is constant after clipping (min == max).
+        If the volume holds a NaN or infinity, or is constant after clipping.
     """
     if minclip is not None and maxclip is not None and not minclip < maxclip:
         raise ValueError(
             f"minclip ({minclip}) must be strictly below maxclip ({maxclip})."
+        )
+    # Checked before clipping: clamping an infinity to a bound would hide it,
+    # and a NaN survives clamping to poison min/max and every voxel downstream.
+    nonfinite = int((~torch.isfinite(arr)).sum())
+    if nonfinite:
+        raise ValueError(
+            f"{name} contains {nonfinite} non-finite voxel(s) (NaN or "
+            "infinity); registration would silently produce a meaningless "
+            "result. Repair the volume before registering it."
         )
     if minclip is not None or maxclip is not None:
         arr = torch.clamp(arr, min=minclip, max=maxclip)
@@ -120,7 +131,7 @@ def minmax_normalize(arr, minclip=None, maxclip=None):
     hi = arr.max()
     if not (hi > lo):
         raise ValueError(
-            "Image is constant after clipping; cannot min-max normalize. "
+            f"{name} is constant after clipping; cannot min-max normalize. "
             "Check the clip bounds."
         )
     return (arr - lo) / (hi - lo)

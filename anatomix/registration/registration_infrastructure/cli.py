@@ -501,6 +501,19 @@ def build_custom_kwargs(args):
     args.unet_kwargs = None
     args.vit_kwargs = None
     if args.backbone != "custom":
+        # These would be silently ignored, and the run would quietly complete
+        # against a stock Hub checkpoint instead of the requested weights.
+        foreign = [
+            flag for flag, value in (
+                ("--custom-arch", args.custom_arch),
+                ("--custom-weights", args.custom_weights),
+            ) if value
+        ]
+        if foreign:
+            raise ValueError(
+                f"{', '.join(foreign)}: only used with --backbone custom (got "
+                f"--backbone {args.backbone}), and would otherwise be ignored."
+            )
         return
     if not args.custom_weights:
         raise ValueError("--backbone custom requires --custom-weights.")
