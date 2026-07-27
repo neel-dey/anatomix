@@ -1,11 +1,12 @@
 """End-to-end orchestration for the FireANTs registration CLI.
 
-Loads the backbone once, then processes each fixed/moving pair sequentially:
-preprocess -> feature extraction -> feature-image assembly (with optional mask
-channel) -> multi-stage FireANTs registration -> warp the original moving image
-and label onto the fixed geometry -> Dice and fold metrics -> a per-pair row in
-the metrics CSV. Batch pairs are processed one at a time so arbitrary shapes are
-supported and GPU memory stays bounded.
+Loads the backbone once (when ``--features`` needs one), then processes each
+fixed/moving pair sequentially: preprocess -> feature extraction -> feature
+image assembly (with optional mask channel) -> multi-stage FireANTs
+registration -> warp the original moving image and label onto the fixed
+geometry and the fixed keypoints into moving space -> Dice, TRE and fold
+metrics -> a per-pair row in the metrics CSV. Batch pairs are processed one at
+a time so arbitrary shapes are supported and GPU memory stays bounded.
 """
 import csv
 import math
@@ -23,14 +24,22 @@ from .features import (
     minmax_normalize,
     prepare_feature_channels,
 )
-from .io_utils import strip_nifti_ext
-from .metrics import count_folds, dice_score
+from .io_utils import (
+    METRIC_COLUMNS,
+    read_keypoints,
+    strip_nifti_ext,
+    write_keypoints,
+)
+from .metrics import count_folds, dice_score, keypoint_metrics
 from .register import run_registration
 from .warp_io import (
     array_spacing,
     as_batch,
+    keypoints_from_physical,
+    keypoints_to_physical,
     load_image,
     save_transforms,
+    warp_keypoints,
     warp_volume,
     write_on_geometry,
 )
@@ -96,7 +105,7 @@ def _mass_image(normalized, mask):
 
 
 def _validate_pair(pair, label):
-    """Validate mask/segmentation availability for one pair."""
+    """Validate mask/segmentation/keypoint availability for one pair."""
     has_fixed_mask = pair.get("fixed_mask") is not None
     has_moving_mask = pair.get("moving_mask") is not None
     if has_fixed_mask != has_moving_mask:
@@ -106,6 +115,11 @@ def _validate_pair(pair, label):
     if pair.get("fixed_seg") is not None and pair.get("moving_seg") is None:
         raise ValueError(
             f"{label}: a fixed segmentation requires a moving segmentation."
+        )
+    if (pair.get("moving_keypoints") is not None
+            and pair.get("fixed_keypoints") is None):
+        raise ValueError(
+            f"{label}: moving keypoints require fixed keypoints."
         )
     return has_fixed_mask and has_moving_mask
 
@@ -118,10 +132,9 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, stem,
 
     Returns
     -------
-    dice : float or str
-        Macro Dice if both segmentations are present, else ``""``.
-    num_folds : int
-        Number of folded voxels in the deformation.
+    dict
+        The :data:`METRIC_COLUMNS` for this pair; the Dice and TRE entries are
+        ``""`` when the pair lacks the segmentations or keypoints they need.
     """
     has_masks = _validate_pair(pair, label)
     stage_specs = resolve_stage_losses(stages, has_masks)
@@ -144,6 +157,9 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, stem,
     moving_img = load_image(pair["moving"], device)
     fixed_spacing = array_spacing(fixed_img)
     moving_spacing = array_spacing(moving_img)
+    # Coordinate matrices for the keypoints; the images themselves are rebound
+    # to feature tensors below.
+    fixed_geom, moving_geom = fixed_img, moving_img
 
     # Keep the original moving intensity for the final (single) warp.
     moving_raw = moving_img.array.clone()
@@ -165,17 +181,17 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, stem,
         fixed_mask_t = fixed_mask_img.array
         moving_mask_t = moving_mask_img.array
 
-    fixed_feats, fixed_mind = prepare_feature_channels(
+    fixed_primary, fixed_mind = prepare_feature_channels(
         fixed_norm, fixed_spacing, model, **feat_cfg,
     )
-    moving_feats, moving_mind = prepare_feature_channels(
+    moving_primary, moving_mind = prepare_feature_channels(
         moving_norm, moving_spacing, model, **feat_cfg,
     )
     fixed_comb = combine_feature_channels(
-        fixed_feats, fixed_mind, fixed_mask_t, args.use_mindssc,
+        fixed_primary, fixed_mind, fixed_mask_t, args.features,
     )
     moving_comb = combine_feature_channels(
-        moving_feats, moving_mind, moving_mask_t, args.use_mindssc,
+        moving_primary, moving_mind, moving_mask_t, args.features,
     )
     if args.verbose:
         print(
@@ -221,11 +237,11 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, stem,
                 warp_volume(moving_mask_t, grid, "nearest")
                 if moving_mask_t is not None else None
             )
-            feats, mind = prepare_feature_channels(
+            primary, mind = prepare_feature_channels(
                 warped_norm, fixed_spacing, model, **feat_cfg,
             )
             comb = combine_feature_channels(
-                feats, mind, warped_mask_t, args.use_mindssc,
+                primary, mind, warped_mask_t, args.features,
             )
         # fixed geometry template
         warped_img = load_image(pair["fixed"], device)
@@ -274,17 +290,60 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, stem,
             if isinstance(dice, float) and math.isnan(dice):
                 dice = ""  # no foreground in the fixed seg -> blank, not "nan"
 
+    metrics = {col: "" for col in METRIC_COLUMNS}
+    metrics["dice"] = dice
+    metrics["num_folds"] = num_folds
+
+    moved_kp_path = None
+    if pair.get("fixed_keypoints") is not None:
+        convention = args.keypoint_convention
+        kp_columns, kp_rows, kp_coords = read_keypoints(
+            pair["fixed_keypoints"])
+        source = keypoints_to_physical(
+            torch.tensor(kp_coords, device=device, dtype=torch.float32),
+            convention, fixed_geom,
+        )
+        warped = warp_keypoints(source, grid, fixed_geom, moving_geom)
+        moved_kp_path = os.path.join(
+            args.output_dir, f"{prefix}moved-keypoints-{stem}.csv",
+        )
+        write_keypoints(
+            moved_kp_path, kp_columns, kp_rows,
+            keypoints_from_physical(warped, convention, moving_geom)
+            .cpu().numpy(),
+        )
+        if pair.get("moving_keypoints") is not None:
+            _, _, target_coords = read_keypoints(pair["moving_keypoints"])
+            target = keypoints_to_physical(
+                torch.tensor(
+                    target_coords, device=device, dtype=torch.float32,
+                ),
+                convention, moving_geom,
+            )
+            metrics.update(keypoint_metrics(
+                warped.cpu().numpy(), target.cpu().numpy(),
+                source.cpu().numpy(),
+            ))
+
     if args.verbose:
         print(f"  -> moved:  {moved_path}", flush=True)
-        print(f"  -> dice={dice} folds={num_folds}", flush=True)
+        if moved_kp_path is not None:
+            print(f"  -> keypoints: {moved_kp_path}", flush=True)
+        print(
+            f"  -> dice={metrics['dice']} folds={num_folds} "
+            f"tre={metrics['tre_median']} (initial "
+            f"{metrics['tre_initial_median']}) "
+            f"robustness={metrics['robustness']}",
+            flush=True,
+        )
 
     del (
-        fixed_img, moving_img, fixed_batch, moving_batch, result, grid, moved,
-        fixed_comb, moving_comb, fixed_feats, moving_feats, fixed_mind,
-        moving_mind, moving_raw,
+        fixed_img, moving_img, fixed_geom, moving_geom, fixed_batch,
+        moving_batch, result, grid, moved, fixed_comb, moving_comb,
+        fixed_primary, moving_primary, fixed_mind, moving_mind, moving_raw,
     )
     torch.cuda.empty_cache()
-    return dice, num_folds
+    return metrics
 
 
 def run(args, pairs, input_columns, stages):
@@ -329,7 +388,7 @@ def run(args, pairs, input_columns, stages):
         print(f"[device] {device}{name}", flush=True)
 
     model = None
-    if args.use_mindssc != "mindssc-only":
+    if args.features in ("anatomix+mindssc", "anatomix"):
         model = load_backbone(
             args.backbone, device,
             custom_arch=getattr(args, "custom_arch", None),
@@ -339,7 +398,7 @@ def run(args, pairs, input_columns, stages):
         )
 
     feat_cfg = dict(
-        use_mindssc=args.use_mindssc,
+        features=args.features,
         isotropic=bool(args.isotropic_features),
         window=args.sw_window,
         sw_batch=args.sw_batch,
@@ -367,7 +426,7 @@ def run(args, pairs, input_columns, stages):
 
     # Write the metrics CSV incrementally (one flushed row per completed pair) so
     # a mid-batch failure preserves the results computed so far.
-    fieldnames = list(input_columns) + ["dice", "num_folds"]
+    fieldnames = list(input_columns) + list(METRIC_COLUMNS)
     csv_path = os.path.join(args.output_dir, f"{prefix}metrics.csv")
     rows = []
     with open(csv_path, "w", newline="") as handle:
@@ -376,13 +435,12 @@ def run(args, pairs, input_columns, stages):
         handle.flush()
         for index, pair in enumerate(pairs):
             label = f"pair {index}"
-            dice, num_folds = process_pair(
+            metrics = process_pair(
                 pair, args, stages, feat_cfg, model, device, prefix,
                 stems[index], label,
             )
             row = {col: (pair.get(col) or "") for col in input_columns}
-            row["dice"] = dice
-            row["num_folds"] = num_folds
+            row.update(metrics)
             writer.writerow({key: row.get(key, "") for key in fieldnames})
             handle.flush()
             rows.append(row)

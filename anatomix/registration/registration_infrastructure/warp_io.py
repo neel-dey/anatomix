@@ -20,6 +20,7 @@ from ._fireants import (
     Image,
     torch_grid_sampler_3d,
 )
+from .io_utils import KEYPOINT_CONVENTIONS
 
 
 def load_image(path, device, is_segmentation=False):
@@ -74,6 +75,103 @@ def warp_volume(moving_tensor, grid, mode):
 def write_on_geometry(tensor, reference_batch, out_path):
     """Write ``tensor`` to ``out_path`` on ``reference_batch``'s geometry."""
     FakeBatchedImages(tensor, reference_batch).write_image(out_path)
+
+
+# Keypoints. FireANTs' Image supplies the coordinate matrices: phy2torch maps an
+# ITK/LPS point to the normalized [-1, 1] coordinates that index the sampling
+# grid, torch2phy inverts it, and both use ITK (i, j, k) order.
+# nibabel/NIfTI world coordinates are RAS; ITK/SimpleITK physical space is LPS.
+_RAS_TO_LPS = (-1.0, -1.0, 1.0)
+
+
+def _apply_affine(matrix, points):
+    """Apply a ``(1, 4, 4)`` homogeneous matrix to ``(K, 3)`` points."""
+    matrix = matrix[0].to(points.dtype)
+    return points @ matrix[:3, :3].T + matrix[:3, 3]
+
+
+def keypoints_to_physical(points, convention, image):
+    """Convert keypoints from ``convention`` to ITK/LPS physical coordinates.
+
+    Parameters
+    ----------
+    points : torch.Tensor
+        Keypoints ``(K, 3)`` in ``convention``, on ``image``'s device.
+    convention : {'lps', 'ras', 'voxel'}
+        World coordinates in mm, or the ITK continuous index ``(i, j, k)`` for
+        ``'voxel'`` (the reverse of the NumPy array axes).
+    image : fireants.io.Image
+        The image the keypoints belong to.
+
+    Returns
+    -------
+    torch.Tensor
+        Keypoints ``(K, 3)`` in ITK/LPS physical coordinates.
+    """
+    if convention == "lps":
+        return points
+    if convention == "ras":
+        return points * torch.tensor(
+            _RAS_TO_LPS, device=points.device, dtype=points.dtype,
+        )
+    if convention == "voxel":
+        return _apply_affine(image.px2phy, points)
+    raise ValueError(
+        f"keypoint convention must be one of {KEYPOINT_CONVENTIONS}, "
+        f"got {convention!r}."
+    )
+
+
+def keypoints_from_physical(points, convention, image):
+    """Inverse of :func:`keypoints_to_physical`."""
+    if convention == "lps":
+        return points
+    if convention == "ras":
+        return points * torch.tensor(
+            _RAS_TO_LPS, device=points.device, dtype=points.dtype,
+        )
+    if convention == "voxel":
+        return _apply_affine(image.phy2px, points)
+    raise ValueError(
+        f"keypoint convention must be one of {KEYPOINT_CONVENTIONS}, "
+        f"got {convention!r}."
+    )
+
+
+def warp_keypoints(points_phys, grid, fixed_image, moving_image):
+    """Map fixed-image keypoints through a cumulative grid into moving space.
+
+    Parameters
+    ----------
+    points_phys : torch.Tensor
+        Fixed-image keypoints ``(K, 3)`` in ITK/LPS physical coordinates.
+    grid : torch.Tensor
+        Cumulative sampling grid ``(1, H, W, D, 3)``: absolute normalized
+        moving-image coordinates indexed on the fixed grid, so it transports
+        *fixed*-image points the same way the moving image is resampled onto
+        the fixed grid.
+    fixed_image, moving_image : fireants.io.Image
+        The pair being registered, for their coordinate matrices.
+
+    Returns
+    -------
+    torch.Tensor
+        The warped keypoints ``(K, 3)`` in the moving image's ITK/LPS physical
+        coordinates. Points outside the fixed field of view are clamped to the
+        grid border.
+    """
+    normalized = _apply_affine(
+        fixed_image.phy2torch, points_phys.to(grid.dtype))
+    # grid_sample wants the coordinate field channels-first and the (continuous)
+    # keypoint queries as a (1, 1, 1, K, 3) grid.
+    field = grid.permute(0, 4, 1, 2, 3)
+    query = normalized.reshape(1, 1, 1, -1, 3)
+    sampled = F.grid_sample(
+        field, query, mode="bilinear", padding_mode="border",
+        align_corners=True,
+    )
+    moved = sampled.reshape(3, -1).T
+    return _apply_affine(moving_image.torch2phy, moved)
 
 
 class _CumulativeWarp(DeformableMixin):

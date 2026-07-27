@@ -2,10 +2,11 @@
 """anatomix-register.py -- FireANTs registration on anatomix features.
 
 Register arbitrary 3D volume pairs by extracting anatomix network features
-(and/or MIND-SSC descriptors) and optimizing them with FireANTs. Supports
-rigid/affine/deformable stages, masked and unmasked losses, optional label
-warping, transform export (ants/scipy/pytorch), Dice, and fold counting, in
-single-pair and batch modes.
+(and/or MIND-SSC descriptors, and/or the raw intensities) and optimizing them
+with FireANTs. Supports rigid/affine/deformable stages, masked and unmasked
+losses, optional label warping, optional keypoint warping with
+target-registration error, transform export (ants/scipy/pytorch), Dice, and
+fold counting, in single-pair and batch modes.
 
 Install the backend once with::
 

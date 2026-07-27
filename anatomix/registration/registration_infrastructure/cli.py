@@ -15,8 +15,20 @@ import os
 import nibabel as nib
 import numpy as np
 
-from .io_utils import NIFTI_EXTS, VOLUME_COLUMNS, read_pairs_csv
+from .io_utils import (
+    KEYPOINT_COLUMNS,
+    KEYPOINT_CONVENTIONS,
+    KEYPOINT_EXT,
+    METRIC_COLUMNS,
+    NIFTI_EXTS,
+    VOLUME_COLUMNS,
+    read_keypoints,
+    read_pairs_csv,
+)
 
+FEATURE_CHOICES = ("anatomix+mindssc", "anatomix", "mindssc", "intensity")
+# Feature families that need the anatomix backbone loaded.
+MODEL_FEATURES = ("anatomix+mindssc", "anatomix")
 TRANSFORM_RANK = {"rigid": 0, "affine": 1, "deformable": 2}
 VALID_LOSSES = {"cc", "mi", "mse", "masked_cc", "masked_mi", "masked_mse"}
 # Losses that consume a CC kernel schedule (auto default resolves to a CC loss).
@@ -40,8 +52,9 @@ def build_parser():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description=(
             "Register 3D volume pairs with FireANTs on anatomix network "
-            "features (and/or MIND-SSC descriptors). Supports rigid/affine/"
-            "deformable stages, masked and unmasked losses, label warping, "
+            "features, MIND-SSC descriptors, or the raw intensities. Supports "
+            "rigid/affine/deformable stages, masked and unmasked losses, "
+            "label warping, keypoint warping with target-registration error, "
             "transform export, Dice, and fold counting, in single-pair and "
             "batch modes."
         ),
@@ -64,15 +77,24 @@ def build_parser():
     mode.add_argument(
         "--registration-pairs-csv",
         help="Batch: CSV with a header and columns fixed,moving"
-        "[,fixed_mask,moving_mask,fixed_seg,moving_seg].",
+        "[,fixed_mask,moving_mask,fixed_seg,moving_seg"
+        ",fixed_keypoints,moving_keypoints].",
     )
 
-    aux = parser.add_argument_group("masks and segmentations")
+    aux = parser.add_argument_group("masks, segmentations and keypoints")
     aux.add_argument("--fixed-mask", help="Fixed registration mask.")
     aux.add_argument("--moving-mask", help="Moving registration mask.")
     aux.add_argument("--fixed-seg", help="Fixed segmentation (enables Dice).")
     aux.add_argument(
         "--moving-seg", help="Moving segmentation (warped to fixed).")
+    aux.add_argument(
+        "--fixed-keypoints",
+        help="Fixed-image keypoint CSV (warped into moving space).",
+    )
+    aux.add_argument(
+        "--moving-keypoints",
+        help="Corresponding moving-image keypoint CSV (enables TRE).",
+    )
     aux.add_argument("--fixed-mask-dir",
                      help="Batch directory of fixed masks.")
     aux.add_argument("--moving-mask-dir",
@@ -80,6 +102,16 @@ def build_parser():
     aux.add_argument("--fixed-seg-dir", help="Batch directory of fixed segs.")
     aux.add_argument("--moving-seg-dir",
                      help="Batch directory of moving segs.")
+    aux.add_argument("--fixed-keypoints-dir",
+                     help="Batch directory of fixed keypoint CSVs.")
+    aux.add_argument("--moving-keypoints-dir",
+                     help="Batch directory of moving keypoint CSVs.")
+    aux.add_argument(
+        "--keypoint-convention", choices=list(KEYPOINT_CONVENTIONS),
+        default="lps",
+        help="Keypoint CSV coordinate convention: lps/ras world mm, or "
+        "voxel for the ITK continuous index (i,j,k).",
+    )
 
     clip = parser.add_argument_group(
         "intensity clipping (reused across a batch)")
@@ -148,10 +180,18 @@ def build_parser():
 
     feat = parser.add_argument_group("features")
     feat.add_argument(
+        "--features", choices=list(FEATURE_CHOICES),
+        default="anatomix+mindssc",
+        help="Which channel families to register. 'mindssc' and 'intensity' "
+        "load no backbone; 'intensity' registers the clipped, min-max "
+        "normalized image itself (the classic MI/CC baseline).",
+    )
+    feat.add_argument(
         "--backbone",
         choices=["anatomix", "anatomix-dev", "anatomix-dev-vit", "custom"],
         default="anatomix-dev-vit",
-        help="anatomix feature extractor (custom: see custom-backbone flags).",
+        help="anatomix feature extractor (custom: see custom-backbone flags). "
+        "Only used when --features includes anatomix.",
     )
     feat.add_argument(
         "--isotropic-features", type=int, choices=[0, 1], default=1,
@@ -167,11 +207,6 @@ def build_parser():
         "--feature-normalization",
         choices=["l2", "standardized", "none"], default="l2",
         help="Per-voxel network-feature normalization (not applied to MIND).",
-    )
-    feat.add_argument(
-        "--use-mindssc", choices=["both", "feats-only", "mindssc-only"],
-        default="both",
-        help="Which feature families to register (mindssc-only loads no model).",
     )
     feat.add_argument(
         "--mindssc-params", default="1,2",
@@ -497,23 +532,33 @@ def parse_mindssc(args):
         raise ValueError("--mindssc-params: radius/dilation must be > 0.")
 
 
+def reject_custom_backbone_flags(args, because):
+    """Reject ``--custom-*`` flags that cannot take effect.
+
+    They would otherwise be ignored and the run would quietly complete against
+    something other than the requested weights.
+    """
+    foreign = [
+        flag for flag, value in (
+            ("--custom-arch", args.custom_arch),
+            ("--custom-weights", args.custom_weights),
+        ) if value
+    ]
+    if foreign:
+        raise ValueError(
+            f"{', '.join(foreign)}: {because}, and would otherwise be ignored."
+        )
+
+
 def build_custom_kwargs(args):
     args.unet_kwargs = None
     args.vit_kwargs = None
     if args.backbone != "custom":
-        # These would be silently ignored, and the run would quietly complete
-        # against a stock Hub checkpoint instead of the requested weights.
-        foreign = [
-            flag for flag, value in (
-                ("--custom-arch", args.custom_arch),
-                ("--custom-weights", args.custom_weights),
-            ) if value
-        ]
-        if foreign:
-            raise ValueError(
-                f"{', '.join(foreign)}: only used with --backbone custom (got "
-                f"--backbone {args.backbone}), and would otherwise be ignored."
-            )
+        reject_custom_backbone_flags(
+            args,
+            f"only used with --backbone custom (got --backbone "
+            f"{args.backbone})",
+        )
         return
     if not args.custom_weights:
         raise ValueError("--backbone custom requires --custom-weights.")
@@ -548,13 +593,21 @@ def build_custom_kwargs(args):
         )
 
 
-def _list_nifti(directory, role):
+def _list_dir(directory, role, extensions, description):
     if not os.path.isdir(directory):
         raise ValueError(f"{role}: not a directory: {directory}")
-    files = sorted(f for f in os.listdir(directory) if f.endswith(NIFTI_EXTS))
+    files = sorted(f for f in os.listdir(directory) if f.endswith(extensions))
     if not files:
-        raise ValueError(f"{role}: no .nii/.nii.gz files in {directory}")
+        raise ValueError(f"{role}: no {description} files in {directory}")
     return [os.path.abspath(os.path.join(directory, f)) for f in files]
+
+
+def _list_nifti(directory, role):
+    return _list_dir(directory, role, NIFTI_EXTS, ".nii/.nii.gz")
+
+
+def _list_keypoints(directory, role):
+    return _list_dir(directory, role, (KEYPOINT_EXT,), ".csv")
 
 
 def _abspath(value):
@@ -579,6 +632,16 @@ def _single_pair(args):
             columns.append("fixed_seg")
         pair["moving_seg"] = _abspath(args.moving_seg)
         columns.append("moving_seg")
+    # Keypoints mirror segmentations with the roles swapped: the transform maps
+    # fixed points into moving space, so the fixed set is the one warped.
+    if args.moving_keypoints and not args.fixed_keypoints:
+        raise ValueError("--moving-keypoints requires --fixed-keypoints.")
+    if args.fixed_keypoints:
+        pair["fixed_keypoints"] = _abspath(args.fixed_keypoints)
+        columns.append("fixed_keypoints")
+        if args.moving_keypoints:
+            pair["moving_keypoints"] = _abspath(args.moving_keypoints)
+            columns.append("moving_keypoints")
     return [pair], columns
 
 
@@ -623,20 +686,42 @@ def _dir_pairs(args):
         data["moving_seg"] = files
         columns.append("moving_seg")
 
+    if args.moving_keypoints_dir and not args.fixed_keypoints_dir:
+        raise ValueError(
+            "--moving-keypoints-dir requires --fixed-keypoints-dir.")
+    if args.fixed_keypoints_dir:
+        for role, directory, col in [
+            ("--fixed-keypoints-dir", args.fixed_keypoints_dir,
+             "fixed_keypoints"),
+            ("--moving-keypoints-dir", args.moving_keypoints_dir,
+             "moving_keypoints"),
+        ]:
+            if not directory:
+                continue
+            files = _list_keypoints(directory, role)
+            if len(files) != len(fixed):
+                raise ValueError(f"{role}: count must match the image count.")
+            data[col] = files
+            columns.append(col)
+
     pairs = [
         {col: data[col][i] for col in columns} for i in range(len(fixed))
     ]
     return pairs, columns
 
 
-_SINGLE_AUX = ("fixed_mask", "moving_mask", "fixed_seg", "moving_seg")
+_SINGLE_AUX = (
+    "fixed_mask", "moving_mask", "fixed_seg", "moving_seg",
+    "fixed_keypoints", "moving_keypoints",
+)
 _DIR_AUX = (
     "fixed_mask_dir", "moving_mask_dir", "fixed_seg_dir", "moving_seg_dir",
+    "fixed_keypoints_dir", "moving_keypoints_dir",
 )
 
 
 def _reject_foreign_aux_flags(args, keep):
-    """Error if mask/seg flags belonging to a different input mode are set.
+    """Error if aux flags belonging to a different input mode are set.
 
     ``keep`` is the tuple of aux flag names valid for the active mode; any other
     aux flag that is set is a silent no-op and therefore rejected.
@@ -647,8 +732,8 @@ def _reject_foreign_aux_flags(args, keep):
         flags = ", ".join("--" + f.replace("_", "-") for f in foreign)
         raise ValueError(
             f"{flags}: not valid for the chosen input mode and would be "
-            "ignored. Use the mask/seg flags (or CSV columns) that match the "
-            "input mode."
+            "ignored. Use the mask/seg/keypoint flags (or CSV columns) that "
+            "match the input mode."
         )
 
 
@@ -676,6 +761,15 @@ def resolve_inputs(args):
         return _dir_pairs(args)
     _reject_foreign_aux_flags(args, ())
     columns, rows = read_pairs_csv(args.registration_pairs_csv)
+    # A passthrough column named after a metric would be overwritten by it and
+    # duplicated in the metrics-CSV header.
+    reserved = [col for col in columns if col in METRIC_COLUMNS]
+    if reserved:
+        raise ValueError(
+            f"{args.registration_pairs_csv}: column(s) "
+            f"{', '.join(reserved)} collide with the metrics the run writes "
+            f"({', '.join(METRIC_COLUMNS)}); rename them."
+        )
     return rows, columns
 
 
@@ -722,7 +816,36 @@ def validate_volumes(pairs):
     return geometries
 
 
+def validate_keypoints(pairs):
+    """Validate every keypoint CSV and check the fixed/moving counts match.
+
+    Keypoints are absent from :func:`validate_volumes` and
+    :func:`validate_geometry` on purpose: they carry no voxel grid to check.
+    """
+    for index, pair in enumerate(pairs):
+        counts = {}
+        for col in KEYPOINT_COLUMNS:
+            path = pair.get(col)
+            if path is None:
+                continue
+            role = f"pair {index} [{col}]"
+            if not os.path.isfile(path):
+                raise ValueError(f"{role}: file not found: {path}")
+            if not path.endswith(KEYPOINT_EXT):
+                raise ValueError(f"{role}: expected a .csv file: {path}")
+            _, _, coordinates = read_keypoints(path)
+            counts[col] = len(coordinates)
+        if len(counts) == 2 and len(set(counts.values())) != 1:
+            raise ValueError(
+                f"pair {index}: fixed_keypoints has "
+                f"{counts['fixed_keypoints']} points but moving_keypoints "
+                f"has {counts['moving_keypoints']}; "
+                "they must correspond row by row."
+            )
+
+
 # Each auxiliary volume is consumed on the grid of exactly one image.
+# Keypoints are excluded on purpose (see validate_keypoints).
 _AUX_IMAGE = {
     "fixed_mask": "fixed", "fixed_seg": "fixed",
     "moving_mask": "moving", "moving_seg": "moving",
@@ -839,8 +962,9 @@ def validate_pairs(pairs, stages):
     """Per-pair checks that must run before the backbone loads.
 
     A missing required ``fixed``/``moving`` path, a lone mask, a fixed
-    segmentation without a moving one, or an explicit masked loss on a pair
-    with no masks -- each would otherwise surface mid-batch.
+    segmentation without a moving one, moving keypoints without fixed ones, or
+    an explicit masked loss on a pair with no masks -- each would otherwise
+    surface mid-batch.
     """
     explicit_masked = any(
         s["loss"] is not None and s["loss"].startswith("masked_") for s in stages
@@ -859,6 +983,12 @@ def validate_pairs(pairs, stages):
         if pair.get("fixed_seg") is not None and pair.get("moving_seg") is None:
             raise ValueError(
                 f"pair {index}: a fixed segmentation requires a moving one."
+            )
+        if (pair.get("moving_keypoints") is not None
+                and pair.get("fixed_keypoints") is None):
+            raise ValueError(
+                f"pair {index}: moving keypoints require fixed keypoints (the "
+                "transform maps fixed points into moving space)."
             )
         if explicit_masked and not (has_fixed_mask and has_moving_mask):
             raise ValueError(
@@ -889,17 +1019,24 @@ def main(argv=None):
     try:
         parse_sliding_window(args)
         parse_mindssc(args)
-        if args.backbone == "anatomix-dev-vit" and args.sw_window != 128:
-            raise ValueError(
-                "anatomix-dev-vit requires a 128-voxel sliding window "
-                "(--sliding-window-params window=128)."
-            )
-        build_custom_kwargs(args)
+        # The backbone settings are inert unless a network is actually loaded.
+        if args.features in MODEL_FEATURES:
+            if args.backbone == "anatomix-dev-vit" and args.sw_window != 128:
+                raise ValueError(
+                    "anatomix-dev-vit requires a 128-voxel sliding window "
+                    "(--sliding-window-params window=128)."
+                )
+            build_custom_kwargs(args)
+        else:
+            reject_custom_backbone_flags(
+                args, f"--features {args.features} loads no backbone")
+            args.unet_kwargs = args.vit_kwargs = None
         stages = build_stages(args)
         validate_device(args.device)
         pairs, input_columns = resolve_inputs(args)
         geometries = validate_volumes(pairs)
         validate_pairs(pairs, stages)
+        validate_keypoints(pairs)
         validate_geometry(geometries)
         validate_pyramid(geometries, stages)
     except ValueError as error:

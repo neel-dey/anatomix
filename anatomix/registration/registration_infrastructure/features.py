@@ -10,8 +10,11 @@ FireANTs registers:
 4. per-voxel feature normalization (L2 / standardized / none) of the *network*
    features only;
 5. a hand-crafted MIND-SSC descriptor (unnormalized);
-6. optional masking of the network features and concatenation of the selected
-   feature families.
+6. optional masking of the primary family and concatenation of the selected
+   channel families.
+
+``--features intensity`` skips steps 2-5 and registers the normalized intensity
+directly, the classic single-channel MI/CC baseline.
 
 Everything here operates on plain ``torch`` tensors and the anatomix models; no
 FireANTs import is required.
@@ -234,7 +237,7 @@ def prepare_feature_channels(
     spacing,
     model,
     *,
-    use_mindssc,
+    features,
     isotropic,
     window,
     sw_batch,
@@ -246,7 +249,7 @@ def prepare_feature_channels(
     mindssc_dilation,
     verbose=False,
 ):
-    """Extract network and/or MIND-SSC feature channels on the original grid.
+    """Extract the requested channel families on the original grid.
 
     Parameters
     ----------
@@ -255,10 +258,10 @@ def prepare_feature_channels(
     spacing : sequence of float
         Voxel spacing in array-axis order (used only when ``isotropic``).
     model : torch.nn.Module or None
-        Feature extractor. ``None`` is allowed only for
-        ``use_mindssc == 'mindssc-only'``.
-    use_mindssc : {'both', 'feats-only', 'mindssc-only'}
-        Which feature families to compute.
+        Feature extractor. ``None`` is allowed only for the model-free families
+        (``'mindssc'`` and ``'intensity'``).
+    features : {'anatomix+mindssc', 'anatomix', 'mindssc', 'intensity'}
+        Which channel families to compute.
     isotropic : bool
         If True, features are extracted on an isotropic grid (finest spacing)
         and resampled back to the original grid.
@@ -273,13 +276,20 @@ def prepare_feature_channels(
 
     Returns
     -------
-    feats : torch.Tensor or None
-        Normalized network features ``(1, Cf, H, W, D)`` on the original grid,
-        or ``None`` for ``use_mindssc == 'mindssc-only'``.
+    primary : torch.Tensor or None
+        The maskable channel family on the original grid: normalized network
+        features ``(1, Cf, H, W, D)`` when ``features`` includes ``anatomix``,
+        the min-max normalized intensity ``(1, 1, H, W, D)`` for
+        ``'intensity'``, and ``None`` for ``'mindssc'``.
     mind : torch.Tensor or None
         MIND-SSC descriptor ``(1, 12, H, W, D)`` on the original grid, or
-        ``None`` for ``use_mindssc == 'feats-only'``.
+        ``None`` when ``features`` does not include MIND-SSC.
     """
+    if features == "intensity":
+        # The isotropic detour would only cost a round-trip interpolation of
+        # the very channel being registered.
+        return image_norm, None
+
     orig_shape = tuple(image_norm.shape[-3:])
     if isotropic:
         iso_shape = _isotropic_shape(orig_shape, spacing)
@@ -293,62 +303,63 @@ def prepare_feature_channels(
             image_norm, size=iso_shape, mode="trilinear", align_corners=True,
         )
 
-    feats = None
-    if use_mindssc in ("both", "feats-only"):
+    primary = None
+    if features in ("anatomix+mindssc", "anatomix"):
         if model is None:
             raise ValueError(
-                "A backbone model is required unless use_mindssc == "
-                "'mindssc-only'."
+                "A backbone model is required unless --features is 'mindssc' "
+                "or 'intensity'."
             )
-        feats = _sliding_window_features(
+        primary = _sliding_window_features(
             volume, model, window, sw_batch, overlap, sw_mode, sigma, verbose,
         )
         if resample:
-            feats = F.interpolate(
-                feats, size=orig_shape, mode="trilinear", align_corners=True,
+            primary = F.interpolate(
+                primary, size=orig_shape, mode="trilinear", align_corners=True,
             )
         # Normalize on the (original) registration grid so the L2/standardized
         # invariant holds exactly there, not on the isotropic extraction grid.
-        feats = normalize_features(feats, feature_normalization)
+        primary = normalize_features(primary, feature_normalization)
 
     mind = None
-    if use_mindssc in ("both", "mindssc-only"):
+    if features in ("anatomix+mindssc", "mindssc"):
         mind = MINDSSC(volume, mindssc_radius, mindssc_dilation)
         if resample:
             mind = F.interpolate(
                 mind, size=orig_shape, mode="trilinear", align_corners=True,
             )
 
-    return feats, mind
+    return primary, mind
 
 
-def combine_feature_channels(feats, mind, mask, use_mindssc):
-    """Mask and concatenate the selected feature families.
+def combine_feature_channels(primary, mind, mask, features):
+    """Mask and concatenate the selected channel families.
 
-    When a mask is supplied it multiplies the *network* features only; MIND-SSC
-    is left unmasked. The channel order for ``'both'`` is network features
-    followed by MIND-SSC.
+    A supplied mask multiplies the *primary* family (network features, or the
+    raw intensity for ``'intensity'``); MIND-SSC is left unmasked. The channel
+    order for ``'anatomix+mindssc'`` is network features followed by MIND-SSC.
 
     Parameters
     ----------
-    feats : torch.Tensor or None
-        Network features ``(1, Cf, H, W, D)``.
+    primary : torch.Tensor or None
+        Network features ``(1, Cf, H, W, D)`` or the normalized intensity
+        ``(1, 1, H, W, D)``.
     mind : torch.Tensor or None
         MIND-SSC descriptor ``(1, 12, H, W, D)``.
     mask : torch.Tensor or None
-        Binary mask ``(1, 1, H, W, D)`` broadcast across the network channels.
-    use_mindssc : {'both', 'feats-only', 'mindssc-only'}
-        Which feature families to keep.
+        Binary mask ``(1, 1, H, W, D)`` broadcast across the primary channels.
+    features : {'anatomix+mindssc', 'anatomix', 'mindssc', 'intensity'}
+        Which channel families to keep.
 
     Returns
     -------
     torch.Tensor
         The combined feature tensor ``(1, C, H, W, D)``.
     """
-    if mask is not None and feats is not None:
-        feats = feats * mask
-    if use_mindssc == "mindssc-only":
+    if mask is not None and primary is not None:
+        primary = primary * mask
+    if features == "mindssc":
         return mind
-    if use_mindssc == "feats-only":
-        return feats
-    return torch.cat([feats, mind], dim=1)
+    if features == "anatomix+mindssc":
+        return torch.cat([primary, mind], dim=1)
+    return primary  # 'anatomix' or 'intensity'

@@ -1,4 +1,4 @@
-"""Registration quality metrics: label Dice and deformation fold count."""
+"""Registration quality metrics: label Dice, keypoint TRE, and fold count."""
 import numpy as np
 import torch
 from sklearn.metrics import f1_score
@@ -31,6 +31,36 @@ def dice_score(fixed_seg, moved_seg):
     return float(
         f1_score(gt, pred, labels=labels, average="macro", zero_division=0)
     )
+
+
+def keypoint_metrics(warped, target, source):
+    """Target-registration-error statistics for one keypoint set.
+
+    Parameters
+    ----------
+    warped, target, source : array_like
+        Corresponding physical (mm) coordinates ``(K, 3)``: the fixed keypoints
+        mapped through the transform, the ground-truth moving keypoints, and
+        the fixed keypoints before warping. The initial error compares the last
+        two directly, so it assumes both images share a world frame.
+
+    Returns
+    -------
+    dict
+        ``tre_median``, ``tre_mean``, ``tre_initial_median`` (mm) and
+        ``robustness``, the fraction of keypoints whose error decreased.
+    """
+    warped = np.asarray(warped, dtype=np.float64)
+    target = np.asarray(target, dtype=np.float64)
+    source = np.asarray(source, dtype=np.float64)
+    final = np.linalg.norm(warped - target, axis=1)
+    initial = np.linalg.norm(source - target, axis=1)
+    return {
+        "tre_median": float(np.median(final)),
+        "tre_mean": float(final.mean()),
+        "tre_initial_median": float(np.median(initial)),
+        "robustness": float((final < initial).mean()),
+    }
 
 
 def count_folds(warped_coordinates):
