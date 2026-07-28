@@ -14,6 +14,7 @@ import torch
 import torch.nn.functional as F
 
 from ._fireants import (
+    AffineRegistration,
     BatchedImages,
     DeformableMixin,
     FakeBatchedImages,
@@ -217,13 +218,24 @@ class _CumulativeWarp(DeformableMixin):
         )
 
 
-def _linear_matrix(stage):
-    """Homogeneous physical-space matrix of a linear/init stage."""
-    if stage.name == "affine":
-        return stage.registration.get_affine_matrix()
-    if stage.name == "rigid":
-        return stage.registration.get_rigid_matrix()
-    return stage.registration.get_affine_init()  # moment initialization
+class _CumulativeLinear:
+    """Present a composed linear matrix to FireANTs' ANTs ``.mat`` writer.
+
+    A warm-started rigid/affine stage optimizes a *residual* against
+    re-extracted features, so its FireANTs object no longer holds the
+    cumulative matrix. FireANTs' rigid, affine and moments ANTs writers are the
+    same routine and read only ``get_affine_matrix`` and ``dims``, so supplying
+    those two reuses it verbatim rather than restating the ``.mat`` layout.
+    """
+
+    save_as_ants_transforms = AffineRegistration.save_as_ants_transforms
+
+    def __init__(self, matrix):
+        self.matrix = matrix
+        self.dims = matrix.shape[-1] - 1
+
+    def get_affine_matrix(self, homogenous=True):
+        return self.matrix if homogenous else self.matrix[:, :self.dims]
 
 
 def _save_one(stage, grid, convention, base, fixed_images, moving_images):
@@ -232,10 +244,11 @@ def _save_one(stage, grid, convention, base, fixed_images, moving_images):
     ``grid`` is the cumulative sampling grid up to (and including) ``stage``.
     Every deformable stage is exported through :class:`_CumulativeWarp`, which
     carries the cumulative transform and the pair's real :class:`BatchedImages`;
-    a stage's own FireANTs object may hold only a residual, and in a partly
-    masked chain its images are a ``FakeBatchedImages`` that FireANTs' ANTs
-    writer cannot read geometry from. Linear stages keep their native writers (a
-    ``.mat`` or the raw matrix), which need no image geometry.
+    a stage's own FireANTs object holds only a residual, and in a partly masked
+    chain its images are a ``FakeBatchedImages`` that FireANTs' ANTs writer
+    cannot read geometry from. Linear stages export their cumulative matrix
+    (``stage.linear_matrix``) instead, which needs no image geometry; the moment
+    initialization has no residual to compose and keeps its native writer.
     """
     if convention == "pytorch":
         torch.save(grid.detach().cpu(), base + ".pt")
@@ -251,11 +264,20 @@ def _save_one(stage, grid, convention, base, fixed_images, moving_images):
             warp.save_as_scipy_transforms(base + ".npz")
         return
 
+    if stage.linear_matrix is None:  # moment initialization
+        if convention == "ants":
+            stage.registration.save_as_ants_transforms(base + ".mat")
+        else:
+            matrix = stage.registration.get_affine_init()
+            np.savez(base + ".npz", affine=matrix.detach().cpu().numpy())
+        return
+
     if convention == "ants":
-        stage.registration.save_as_ants_transforms(base + ".mat")
+        _CumulativeLinear(stage.linear_matrix).save_as_ants_transforms(
+            base + ".mat")
     else:
-        matrix = _linear_matrix(stage).detach().cpu().numpy()
-        np.savez(base + ".npz", affine=matrix)
+        np.savez(
+            base + ".npz", affine=stage.linear_matrix.detach().cpu().numpy())
 
 
 def save_transforms(

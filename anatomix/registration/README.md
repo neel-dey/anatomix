@@ -112,7 +112,20 @@ applies to them.
 **The transform chain** — `--transform` is a comma-separated list of stages from
 `{rigid,affine,deformable}`, ordered `rigid ≤ affine ≤ deformable` (repeated
 `deformable` allowed). Every per-stage list has one entry per stage; pyramid
-schedules are `AxBx...`. Defaults reproduce the SOTA single-deformable setup:
+schedules are `AxBx...`.
+
+Every stage after the first re-registers the moving image *as already
+transformed*: it is warped by the running cumulative transform and its features
+are **re-extracted** on the fixed grid, because the anatomix extractor is not
+warp-equivariant — resampled features do not match features computed from the
+warped image. Each stage then optimizes an identity-initialized residual, which
+composes onto the running transform (linear residuals multiply as matrices,
+deformable ones compose as coordinate fields). A multistage chain therefore
+costs one extra feature extraction per stage. The original moving image and
+label are still resampled exactly once, by the final cumulative transform, so
+interpolation error never accumulates into the outputs.
+
+Defaults reproduce the SOTA single-deformable setup:
 
 | flag | meaning | default |
 |------|---------|---------|

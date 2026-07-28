@@ -13,22 +13,25 @@ a multi-channel image to a scalar mass field by summing over channels, which is
 meaningful only for a non-negative, intensity-like field. It returns a
 physical-space matrix, so it initializes the feature stages unchanged.
 
-Linear stages chain in FireANTs' physical-space conventions:
+Only the first stage is warm-started by an initializer -- the moment transform,
+via ``init_translation`` + ``init_moment`` (rigid) or the moment affine
+(``init_rigid`` / ``init_affine``). Every stage after it, of any kind, warps the
+moving image by the running cumulative grid and **re-extracts features** on the
+fixed grid (the ``reextract_moving`` callback), then optimizes an
+identity-initialized residual against them. Re-extraction is required because
+the anatomix extractor is not warp-equivariant: features must be recomputed from
+the warped image, not resampled -- and that holds for a rigid or affine warm
+start as much as a deformable one.
 
-- moments -> rigid via ``init_translation`` + ``init_moment``;
-- moments -> affine via the moment affine (``init_rigid``);
-- rigid -> affine via ``get_rigid_matrix()``; affine -> affine via
-  ``get_affine_matrix()`` (both physical ``y = Ax + t``), fed as the next
-  stage's linear initializer.
+Residuals compose according to their kind:
 
-A deformable stage warm-started from any prior transform -- linear or
-deformable -- warps the moving image by the running cumulative grid and
-**re-extracts features** on the fixed grid (the ``reextract_moving`` callback),
-then optimizes an identity-initialized residual and composes the coordinate
-fields ``T_new(x) = T_old(T_residual(x))``. Re-extraction is required because
-the anatomix extractor is not warp-equivariant: features must be recomputed
-from the warped image, not resampled. The first deformable stage optimizes
-directly and may take the moment affine as ``init_affine``.
+- linear: physical matrices multiply, ``T_new = T_old . T_residual``, and the
+  cumulative grid is rebuilt from the product (exact -- no field is resampled);
+- deformable: coordinate fields compose functionally,
+  ``T_new(x) = T_old(T_residual(x))``, never by adding displacements.
+
+Only the original moving image is ever resampled -- once per warm-started stage,
+by the cumulative grid, so interpolation error does not accumulate across stages.
 """
 from collections import namedtuple
 
@@ -43,10 +46,11 @@ from ._fireants import (
 )
 
 # One entry per executed stage, including a leading 'init' moment stage.
-# ``composed`` marks a deformable stage whose FireANTs object holds only the
-# residual; its cumulative transform lives in the canonical grid.
+# A warm-started stage's FireANTs object holds only its residual, so the
+# cumulative transform lives elsewhere: in ``linear_matrix`` for a rigid/affine
+# stage (``None`` for 'init' and deformable stages) and in the canonical grid.
 StageResult = namedtuple(
-    "StageResult", ["name", "registration", "is_deformable", "composed"]
+    "StageResult", ["name", "registration", "is_deformable", "linear_matrix"]
 )
 
 
@@ -83,49 +87,44 @@ class RegistrationResult:
         self.num_deformable = num_deformable
 
 
-def _decompose_linear(matrix):
-    """Split a homogeneous linear matrix into rotation/linear + translation.
+def _moment_init_kwargs(kind, moments):
+    """Moment-initializer kwargs for the first stage of the chain.
+
+    Only the first stage is initialized this way; every later stage starts from
+    identity against re-extracted, already-transformed moving features.
+    """
+    if moments is None:
+        return {}
+    if kind == "rigid":
+        return moments.get_rigid_init_dict()
+    return moments.get_affine_init_dict()
+
+
+def _linear_grid(matrix, fixed_images, moving_images):
+    """Sampling grid of a physical-space linear transform.
+
+    Mirrors FireANTs' own affine warp construction (``get_warp_parameters`` ->
+    ``F.affine_grid``), so a composed linear chain yields exactly the grid a
+    single stage carrying ``matrix`` would produce. Composing linear stages this
+    way is exact: no coordinate field is ever resampled.
 
     Parameters
     ----------
     matrix : torch.Tensor
-        Homogeneous matrix ``(N, d+1, d+1)`` (physical ``y = Ax + t``).
+        Homogeneous physical matrix ``(N, d+1, d+1)`` mapping fixed physical
+        coordinates to coordinates in the *original* moving image.
+    fixed_images, moving_images : BatchedImages
+        The original pair, for their physical/normalized coordinate matrices.
 
     Returns
     -------
-    linear : torch.Tensor
-        The ``(N, d, d)`` linear block.
-    translation : torch.Tensor
-        The ``(N, d)`` translation.
+    torch.Tensor
+        Cumulative sampling grid ``(N, H, W, D, d)``, normalized ``[-1, 1]``.
     """
-    dims = matrix.shape[-1] - 1
-    return matrix[:, :dims, :dims].contiguous(), matrix[:, :dims, dims].contiguous()
-
-
-def _linear_init_kwargs(kind, moments, cum_linear, first):
-    """Initializer kwargs for a rigid/affine stage."""
-    if kind == "rigid":
-        if first and moments is not None:
-            return moments.get_rigid_init_dict()
-        if cum_linear is not None:
-            linear, transl = _decompose_linear(cum_linear)
-            return {"init_moment": linear, "init_translation": transl}
-        return {}
-    # affine
-    if first and moments is not None:
-        return moments.get_affine_init_dict()
-    if cum_linear is not None:
-        return {"init_rigid": cum_linear}
-    return {}
-
-
-def _greedy_init_affine(moments, cum_linear, first):
-    """Affine initializer for the first deformable stage."""
-    if cum_linear is not None:
-        return cum_linear
-    if first and moments is not None:
-        return moments.get_affine_init()
-    return None
+    fixed_t2p = fixed_images.get_torch2phy().to(matrix.dtype)
+    moving_p2t = moving_images.get_phy2torch().to(matrix.dtype)
+    affine = (moving_p2t @ matrix @ fixed_t2p)[:, :-1].contiguous()
+    return F.affine_grid(affine, fixed_images.shape, align_corners=True)
 
 
 def _common_kwargs(stage, fixed_images, moving_images, verbose):
@@ -197,9 +196,9 @@ def run_registration(
         ``reextract_moving(grid) -> BatchedImages``. Given the current cumulative
         fixed->moving sampling grid, warp the original moving *image* by it and
         re-extract features, returning a fresh moving feature batch on the fixed
-        grid. Required to warm-start a deformable stage from any prior transform
-        (the anatomix feature extractor is not warp-equivariant, so features must
-        be recomputed from the warped image rather than resampled); a ``None``
+        grid. Required by every stage after the first, whatever its kind (the
+        anatomix feature extractor is not warp-equivariant, so features must be
+        recomputed from the warped image rather than resampled); a ``None``
         callback with such a stage raises ``ValueError``.
     has_mask_channel : bool, optional
         Whether the feature images carry an appended mask channel (last channel).
@@ -235,7 +234,7 @@ def run_registration(
             moments=order,
         )
         moments.optimize()
-        stage_results.append(StageResult("init", moments, False, False))
+        stage_results.append(StageResult("init", moments, False, None))
         snapshots.append(
             (
                 "init",
@@ -245,18 +244,18 @@ def run_registration(
             )
         )
 
-    # physical cumulative linear matrix (N, d+1, d+1)
+    # physical cumulative linear matrix (N, d+1, d+1); valid only while the
+    # chain is still purely linear (stage order forbids a linear stage after a
+    # deformable one).
     cum_linear = None
     warped_coordinates = None  # canonical cumulative sampling grid
     num_deformable = 0
-    first = True
 
     for index, stage in enumerate(stages):
         kind = stage["kind"]
         label = f"{index}-{kind}"
         stage_masked = stage["loss"].startswith("masked_")
         f_imgs = _stage_images(fixed_images, has_mask_channel, stage_masked)
-        m_imgs = _stage_images(moving_images, has_mask_channel, stage_masked)
         if verbose:
             print(
                 f"  [stage {index}] {kind}: loss={stage['loss']} "
@@ -265,76 +264,74 @@ def run_registration(
                 flush=True,
             )
 
+        # Every stage after the first sees the moving image *as already
+        # transformed*: warp it by the running cumulative grid, re-extract its
+        # features on the fixed grid, and optimize an identity-initialized
+        # residual. Re-extraction (rather than resampling the moving feature
+        # maps) is required because the anatomix extractor is not
+        # warp-equivariant -- which is as true of a rigid or affine warm start as
+        # of a deformable one, so all three take this path.
+        warm_start = warped_coordinates is not None
+        if warm_start:
+            if reextract_moving is None:
+                raise ValueError(
+                    "A stage warm-started from a prior transform requires a "
+                    "reextract_moving callback."
+                )
+            m_imgs = _stage_images(
+                reextract_moving(warped_coordinates), has_mask_channel,
+                stage_masked,
+            )
+        else:
+            m_imgs = _stage_images(
+                moving_images, has_mask_channel, stage_masked)
+
+        common = _common_kwargs(stage, f_imgs, m_imgs, verbose)
+
         if kind in ("rigid", "affine"):
-            init_kwargs = _linear_init_kwargs(kind, moments, cum_linear, first)
-            common = _common_kwargs(stage, f_imgs, m_imgs, verbose)
+            init_kwargs = (
+                {} if warm_start else _moment_init_kwargs(kind, moments)
+            )
             if kind == "rigid":
                 reg = RigidRegistration(**common, **init_kwargs)
             else:
                 reg = AffineRegistration(**common, **init_kwargs)
             reg.optimize()
-            # Detached: the next stage initializes from this matrix and must not
-            # backpropagate into this one. FireANTs writes the initializer in
-            # place, into a view this stage's autograd graph still holds.
-            cum_linear = (
+            # Detached: this matrix outlives the stage's autograd graph, and
+            # FireANTs writes initializers in place into views that graph holds.
+            residual = (
                 reg.get_rigid_matrix() if kind == "rigid"
                 else reg.get_affine_matrix()
             ).detach()
-            warped_coordinates = reg.get_warped_coordinates(
-                f_imgs, m_imgs
-            ).detach()
-            stage_results.append(StageResult(kind, reg, False, False))
+            # The residual maps fixed coordinates into the prewarped moving
+            # frame, so the total map applies it first: T_new = T_old . T_res.
+            cum_linear = (
+                residual if cum_linear is None else cum_linear @ residual
+            )
+            warped_coordinates = _linear_grid(
+                cum_linear, fixed_images, moving_images
+            )
+            stage_results.append(StageResult(kind, reg, False, cum_linear))
 
         else:  # deformable
-            common = _common_kwargs(stage, f_imgs, m_imgs, verbose)
             common["deformation_type"] = "compositive"
             common["smooth_grad_sigma"] = stage["smooth_grad"]
             common["smooth_warp_sigma"] = stage["smooth_warp"]
-            composed = False
-
-            if warped_coordinates is None:
-                # First transform stage, optionally from a moment affine.
-                init_affine = _greedy_init_affine(moments, cum_linear, first)
-                if init_affine is not None:
-                    common["init_affine"] = init_affine
-                reg = GreedyRegistration(**common)
-                reg.optimize()
-                warped_coordinates = reg.get_warped_coordinates(
-                    f_imgs, m_imgs
-                ).detach()
-            else:
-                # A prior stage already produced a cumulative fixed->moving grid.
-                # Warp the moving image by it, re-extract features, optimize an
-                # identity-initialized residual, and compose. This path also
-                # serves linear->deformable: composing the grid is exact for any
-                # prior transform, so a linear matrix never goes to init_affine.
-                if reextract_moving is None:
-                    raise ValueError(
-                        "A deformable stage warm-started from a prior transform "
-                        "requires a reextract_moving callback."
-                    )
-                composed = True
-                prewarped_images = reextract_moving(warped_coordinates)
-                prewarped_images = _stage_images(
-                    prewarped_images, has_mask_channel, stage_masked
-                )
-                common["moving_images"] = prewarped_images
-                reg = GreedyRegistration(**common)
-                reg.optimize()
-                residual = reg.get_warped_coordinates(
-                    f_imgs, prewarped_images
-                ).detach()
-                warped_coordinates = _compose_grids(
-                    warped_coordinates, residual
-                ).detach()
-
-            num_deformable += 1
-            stage_results.append(
-                StageResult("deformable", reg, True, composed)
+            if not warm_start and moments is not None:
+                common["init_affine"] = moments.get_affine_init()
+            reg = GreedyRegistration(**common)
+            reg.optimize()
+            residual = reg.get_warped_coordinates(f_imgs, m_imgs).detach()
+            # Coordinate fields compose functionally, T_new(x) = T_old(T_res(x)),
+            # never by adding displacements.
+            warped_coordinates = (
+                _compose_grids(warped_coordinates, residual).detach()
+                if warm_start else residual
             )
+            num_deformable += 1
+            stage_results.append(StageResult("deformable", reg, True, None))
 
         snapshots.append((label, warped_coordinates))
-        first = False
 
     return RegistrationResult(
         warped_coordinates, stage_results, snapshots,

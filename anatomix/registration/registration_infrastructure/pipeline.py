@@ -225,11 +225,13 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, stem,
     def reextract_moving(grid):
         """Warp the moving *image* by ``grid`` and re-extract features.
 
-        A warm-started deformable stage needs the moving features in the
+        Every stage after the first needs the moving features in the
         already-transformed frame. The anatomix extractor is not
         warp-equivariant, so they are recomputed from the warped moving image
-        (and mask) rather than resampled from the moving feature maps. The
-        result lives on the fixed grid and carries the fixed geometry.
+        (and mask) rather than resampled from the moving feature maps. Always
+        the *original* moving image warped by the *cumulative* grid, so no
+        interpolation error accumulates across stages. The result lives on the
+        fixed grid and carries the fixed geometry.
         """
         with torch.no_grad():
             warped_norm = warp_volume(moving_norm, grid, "bilinear")
