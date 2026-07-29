@@ -28,13 +28,15 @@ Residuals compose according to their kind:
 - linear: physical matrices multiply, ``T_new = T_old . T_residual``, and the
   cumulative grid is rebuilt from the product (exact -- no field is resampled);
 - deformable: coordinate fields compose functionally,
-  ``T_new(x) = T_old(T_residual(x))``, never by adding displacements.
+  ``T_new(x) = T_old(T_residual(x))``, not by summing displacements at ``x``
+  (equivalently ``v(x) + u(x + v(x))`` in displacement coordinates).
 
 Only the original moving image is ever resampled -- once per warm-started stage,
 by the cumulative grid, so interpolation error does not accumulate across stages.
 """
 from collections import namedtuple
 
+import torch
 import torch.nn.functional as F
 
 from ._fireants import (
@@ -157,12 +159,34 @@ def _stage_images(images, has_mask_channel, stage_masked):
     return images
 
 
+def _compose_linear_grid(matrix, grid_residual, fixed_images, moving_images):
+    """Composition ``T_linear(T_residual(x))`` for a linear ``T_linear``.
+
+    In normalized coordinates the physical matrix is the affine ``[A | t]`` that
+    :func:`_linear_grid` hands to ``F.affine_grid``, so the composition is
+    ``A @ T_residual(x) + t``: the linear map is *evaluated* at the residual's
+    coordinates rather than resampled from a precomputed field. Exact, and
+    unlike :func:`_compose_grids` it carries residual coordinates outside
+    ``[-1, 1]`` through untouched.
+    """
+    fixed_t2p = fixed_images.get_torch2phy().to(matrix.dtype)
+    moving_p2t = moving_images.get_phy2torch().to(matrix.dtype)
+    affine = (moving_p2t @ matrix @ fixed_t2p)[:, :-1]
+    linear, transl = affine[:, :, :-1], affine[:, :, -1]
+    composed = torch.einsum(
+        "bij,b...j->b...i", linear, grid_residual.to(affine.dtype))
+    return (composed + transl[:, None, None, None, :]).to(grid_residual.dtype)
+
+
 def _compose_grids(grid_old, grid_residual):
     """Functional composition of coordinate fields ``T_old(T_residual(x))``.
 
     Both grids are normalized ``[-1, 1]`` sampling grids ``(1, H, W, D, 3)``.
     The old coordinate field is sampled (as a 3-channel image) at the residual
-    coordinates.
+    coordinates; a field has no value to sample outside ``[-1, 1]``, so residual
+    coordinates pointing out of the grid are clamped onto its border. Needed
+    only when ``T_old`` is itself deformable -- a linear ``T_old`` composes
+    exactly through :func:`_compose_linear_grid`.
     """
     old = grid_old.permute(0, 4, 1, 2, 3)
     composed = F.grid_sample(
@@ -322,12 +346,19 @@ def run_registration(
             reg = GreedyRegistration(**common)
             reg.optimize()
             residual = reg.get_warped_coordinates(f_imgs, m_imgs).detach()
-            # Coordinate fields compose functionally, T_new(x) = T_old(T_res(x)),
-            # never by adding displacements.
-            warped_coordinates = (
-                _compose_grids(warped_coordinates, residual).detach()
-                if warm_start else residual
-            )
+            # T_new(x) = T_old(T_res(x)), not a sum of displacements at x. A
+            # still-purely-linear T_old has a closed form and is evaluated
+            # directly; stage order forbids a linear stage after a deformable
+            # one, so cum_linear is then the whole prefix.
+            if not warm_start:
+                warped_coordinates = residual
+            elif num_deformable == 0 and cum_linear is not None:
+                warped_coordinates = _compose_linear_grid(
+                    cum_linear, residual, fixed_images, moving_images,
+                ).detach()
+            else:
+                warped_coordinates = _compose_grids(
+                    warped_coordinates, residual).detach()
             num_deformable += 1
             stage_results.append(StageResult("deformable", reg, True, None))
 
