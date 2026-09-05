@@ -139,6 +139,7 @@ def _common_kwargs(stage, fixed_images, moving_images, verbose):
         optimizer="Adam",
         optimizer_lr=stage["step"],
         progress_bar=verbose,
+        tolerance=stage.get("tolerance", 1e-6),
     )
     if stage["cc_kernel"] is not None:
         kwargs["cc_kernel_size"] = stage["cc_kernel"]

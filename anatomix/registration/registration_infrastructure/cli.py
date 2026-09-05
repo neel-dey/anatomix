@@ -234,6 +234,8 @@ def build_parser():
 
     misc = parser.add_argument_group("misc")
     misc.add_argument("--seed", type=int, default=12345, help="Random seed.")
+    misc.add_argument("--tolerance", type=float, default=1e-6,
+                      help="FireANTs convergence tolerance (loss slope over the last 10 iterations); use inf to disable early stopping.")
     misc.add_argument(
         "--device", default="auto",
         help="Compute device: 'auto' (pick the visible CUDA device with the "
@@ -491,6 +493,7 @@ def build_stages(args):
             "kind": kinds[i], "loss": losses[i], "step": steps[i],
             "shrink": shrinks[i], "iters": iters[i], "cc_kernel": cc_kernels[i],
             "smooth_grad": grad_sigmas[i], "smooth_warp": warp_sigmas[i],
+            "tolerance": args.tolerance,
         }
         for i in range(n)
     ]
