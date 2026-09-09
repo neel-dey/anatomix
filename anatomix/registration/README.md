@@ -233,14 +233,14 @@ python anatomix-register.py \
 **Affine then deformable.** For pairs that start tens of millimeters apart,
 an affine stage before the deformable one. Per-stage flags take one entry per
 stage; `na` marks entries that do not apply to a stage. The figure below is
-case 107 of BraTS-Reg, whose median landmark error goes from 26.3 mm to
-3.8 mm:
+case 127 of BraTS-Reg, whose median landmark error goes from 19.2 mm to
+1.9 mm:
 
 ```bash
 python anatomix-register.py \
-    --fixed BraTSReg_107_00_0000_t1.nii.gz --moving BraTSReg_107_01_0366_flair.nii.gz \
-    --fixed-mask BraTSReg_107_00_mask.nii.gz --moving-mask BraTSReg_107_01_mask.nii.gz \
-    --fixed-keypoints BraTSReg_107_00_0000_landmarks.csv --moving-keypoints BraTSReg_107_01_0366_landmarks.csv \
+    --fixed BraTSReg_127_00_0000_t1.nii.gz --moving BraTSReg_127_01_0148_flair.nii.gz \
+    --fixed-mask BraTSReg_127_00_mask.nii.gz --moving-mask BraTSReg_127_01_mask.nii.gz \
+    --fixed-keypoints BraTSReg_127_00_0000_landmarks.csv --moving-keypoints BraTSReg_127_01_0148_landmarks.csv \
     --transform affine,deformable --step-size 0.01,0.1 \
     --shrink-factors 4x2x1,4x2x1 --iterations 100x100x100,200x100x50 \
     --cc-kernel-widths 9x7x5,7x5x3 --smooth-grad-sigma na,1.0 --smooth-warp-sigma na,0.5 \
