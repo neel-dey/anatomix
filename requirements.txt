@@ -2,6 +2,7 @@ numpy
 nibabel
 scipy
 scikit-image
+scikit-learn
 simpleitk
 nilearn
 h5py

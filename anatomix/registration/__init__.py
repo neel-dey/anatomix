@@ -1,31 +1,20 @@
-from .convex_adam_utils import (
-    extract_features,
-    load_model,
-    diffusion_regularizer,
-    apply_avg_pool3d,
-    correlate,
-    coupled_convex,
-    inverse_consistency,
-    MINDSSC
-)
-from .instance_optimization import (
-    run_stage1_registration,
-    run_instance_opt,
-    merge_features
-)
-from .run_convex_adam_with_network_feats import convex_adam
+"""anatomix 3D registration.
 
-__all__ = [
-    "convex_adam",
-    "extract_features",
-    "load_model",
-    "diffusion_regularizer",
-    "apply_avg_pool3d",
-    "correlate",
-    "coupled_convex",
-    "inverse_consistency",
-    "MINDSSC",
-    "run_stage1_registration",
-    "run_instance_opt",
-    "merge_features"
-] 
+- ``anatomix-register.py``: the FireANTs command-line entry point.
+- :mod:`.registration_infrastructure`: the pipeline behind it.
+- :mod:`.registration_backend`: the ConvexAdam backend of the ICLR'25 paper,
+  and the gitignored FireANTs clone that
+  ``registration_backend/install_fireants.sh`` creates.
+
+Subpackages import lazily, so importing this package never imports FireANTs.
+"""
+
+__all__ = ["registration_infrastructure", "registration_backend"]
+
+
+def __getattr__(name):
+    if name in __all__:
+        import importlib
+
+        return importlib.import_module(f"{__name__}.{name}")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

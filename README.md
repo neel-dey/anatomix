@@ -114,7 +114,7 @@ root-directory/
 │
 ├── anatomix/model/                         # Model definition and architecture
 │
-├── anatomix/registration/                  # Scripts for registration using the pretrained model
+├── anatomix/registration/                  # FireANTs-based 3D registration on anatomix features (anatomix-register.py)
 │
 ├── anatomix/segmentation/                  # Scripts for fine-tuning the model for semantic segmentation
 │
@@ -130,7 +130,7 @@ These include:
 - [x] Colab 3D feature extraction tutorial
 - [x] Colab 3D multimodality registration tutorial
 - [x] Colab 3D few-shot finetuning tutorial
-- [ ] General-purpose registration interface with [FireANTs](https://github.com/rohitrango/FireANTs)
+- [x] General-purpose registration interface with [FireANTs](https://github.com/rohitrango/FireANTs) — FireANTs is now the general registration backend via [`anatomix/registration/`](anatomix/registration/) (`anatomix-register.py`); see the [FireANTs](anatomix/registration/tutorials/anatomix_registration_fireants.ipynb) and (legacy ICLR'25) [ConvexAdam](anatomix/registration/tutorials/anatomix_registration_convexadam.ipynb) tutorials.
 - [ ] Dataset-specific modeling details for paper
 
 
