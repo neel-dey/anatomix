@@ -1,0 +1,82 @@
+[
+ {
+  "case": "0001",
+  "warp": "warp-AbdomenMRCT_0001_0000.nii.gz",
+  "moved_max_abs_diff": 2945.3957716287123,
+  "moved_p999_rel": 0.043808392278511396,
+  "moved_mean_rel": 0.00010445628310129611,
+  "cli_dice": "0.8568321041712593",
+  "ants_dice": 0.8568321041712593,
+  "seg_voxel_agreement": 1.0
+ },
+ {
+  "case": "0002",
+  "warp": "warp-AbdomenMRCT_0002_0000.nii.gz",
+  "moved_max_abs_diff": 21.18120750467409,
+  "moved_p999_rel": 5.2622989535700975e-06,
+  "moved_mean_rel": 1.896572869016973e-05,
+  "cli_dice": "0.8145552252428558",
+  "ants_dice": 0.8145552252428558,
+  "seg_voxel_agreement": 1.0
+ },
+ {
+  "case": "0003",
+  "warp": "warp-AbdomenMRCT_0003_0000.nii.gz",
+  "moved_max_abs_diff": 0.1769889448187314,
+  "moved_p999_rel": 3.247628559776443e-06,
+  "moved_mean_rel": 1.660351650021622e-07,
+  "cli_dice": "0.8399753154742188",
+  "ants_dice": 0.8399753154742188,
+  "seg_voxel_agreement": 1.0
+ },
+ {
+  "case": "0004",
+  "warp": "warp-AbdomenMRCT_0004_0000.nii.gz",
+  "moved_max_abs_diff": 5.761067608890166,
+  "moved_p999_rel": 2.682859396278481e-06,
+  "moved_mean_rel": 3.150580287188499e-07,
+  "cli_dice": "0.9136610285008016",
+  "ants_dice": 0.9136614825013734,
+  "seg_voxel_agreement": 0.9999998304578993
+ },
+ {
+  "case": "0005",
+  "warp": "warp-AbdomenMRCT_0005_0000.nii.gz",
+  "moved_max_abs_diff": 0.01067781262781864,
+  "moved_p999_rel": 3.082087945181608e-06,
+  "moved_mean_rel": 1.3505851936414144e-07,
+  "cli_dice": "0.9183341958992375",
+  "ants_dice": 0.9183341958992375,
+  "seg_voxel_agreement": 1.0
+ },
+ {
+  "case": "0006",
+  "warp": "warp-AbdomenMRCT_0006_0000.nii.gz",
+  "moved_max_abs_diff": 0.004155163117189886,
+  "moved_p999_rel": 3.46766712487082e-06,
+  "moved_mean_rel": 1.1446800378109281e-07,
+  "cli_dice": "0.8979686651441671",
+  "ants_dice": 0.8979686651441671,
+  "seg_voxel_agreement": 1.0
+ },
+ {
+  "case": "0007",
+  "warp": "warp-AbdomenMRCT_0007_0000.nii.gz",
+  "moved_max_abs_diff": 0.039829433878821874,
+  "moved_p999_rel": 3.821505885724917e-06,
+  "moved_mean_rel": 1.591643706492659e-07,
+  "cli_dice": "0.8859054461799047",
+  "ants_dice": 0.8858969325205581,
+  "seg_voxel_agreement": 0.9999998304578993
+ },
+ {
+  "case": "0008",
+  "warp": "warp-AbdomenMRCT_0008_0000.nii.gz",
+  "moved_max_abs_diff": 0.01018618586493858,
+  "moved_p999_rel": 3.0727720865426498e-06,
+  "moved_mean_rel": 1.3074474828802562e-07,
+  "cli_dice": "0.9049675014879937",
+  "ants_dice": 0.9049675014879937,
+  "seg_voxel_agreement": 1.0
+ }
+]

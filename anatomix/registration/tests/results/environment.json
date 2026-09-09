@@ -1,0 +1,25 @@
+{
+  "torch": "2.13.0+cu130",
+  "numpy": "2.4.6",
+  "SimpleITK": "2.5.5",
+  "monai": "1.6.0",
+  "scipy": "1.17.1",
+  "nibabel": "5.4.2",
+  "fireants_revision": "1b39f6d1aa39ecbe2c8e2d478bce15d4a1c93cfa",
+  "gpus": "2x NVIDIA RTX PRO 6000 Blackwell (96 GB)",
+  "weights": {
+    "anatomix": {
+      "snapshot": "842cfe93e634ade096cc6a6bb14309a760c2a8cc",
+      "sha256": "1365d7b6e44d3d9b8b5e69f1b04dba1d6dd74920ae432aa4e53632f217aad1b9"
+    },
+    "anatomix-dev": {
+      "snapshot": "842cfe93e634ade096cc6a6bb14309a760c2a8cc",
+      "sha256": "7631a4254e5ab8276d192cf93c5be49b62637e3a2c856326ee54244d6b4ea23d"
+    },
+    "anatomix-dev-vit": {
+      "snapshot": "842cfe93e634ade096cc6a6bb14309a760c2a8cc",
+      "sha256": "62c7be4b14da7dcc574b90696bf35569f5aa100de6221bb46498f5d580b451ac"
+    }
+  },
+  "date": "2026-09-08"
+}

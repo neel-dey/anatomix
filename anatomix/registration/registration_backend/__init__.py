@@ -1,11 +1,6 @@
-"""Registration backends for anatomix.
+"""Registration backends.
 
-This package holds self-contained registration backends:
-
-- :mod:`~anatomix.registration.registration_backend.convexadam` -- the original
-  ConvexAdam network-feature + MIND-SSC backend (ICLR'25 results), retained and
-  importable but not wired into the new FireANTs command-line interface.
-- ``fireants`` -- a gitignored, editable clone of the FireANTs library installed
-  by ``install_fireants.sh``. It is imported as the top-level ``fireants``
-  package (not through this path) once installed.
+- :mod:`.convexadam`: the ConvexAdam backend used for the ICLR'25 results.
+- ``fireants/``: an editable FireANTs clone created by ``install_fireants.sh``
+  and imported as the top-level ``fireants`` package. It is not committed.
 """

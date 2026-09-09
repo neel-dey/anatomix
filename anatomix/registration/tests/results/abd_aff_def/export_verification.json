@@ -1,0 +1,34 @@
+[
+ {
+  "case": "0001",
+  "snapshots": [
+   "warp-AbdomenMRCT_0001_0000-0-affine.mat",
+   "warp-AbdomenMRCT_0001_0000-1-deformable.nii.gz"
+  ],
+  "final_snapshot_vs_cli": {
+   "max_abs": 3417.8184803727772,
+   "p999_rel": 0.06077698834139656,
+   "mean_rel": 0.00016187440504457481
+  },
+  "stage0_mat_vs_affine_only_run": {
+   "max_abs_param_diff": 0.0,
+   "fixed_params_equal": true
+  }
+ },
+ {
+  "case": "0002",
+  "snapshots": [
+   "warp-AbdomenMRCT_0002_0000-0-affine.mat",
+   "warp-AbdomenMRCT_0002_0000-1-deformable.nii.gz"
+  ],
+  "final_snapshot_vs_cli": {
+   "max_abs": 119.13626098632812,
+   "p999_rel": 0.034420475109469315,
+   "mean_rel": 0.00015219019051630924
+  },
+  "stage0_mat_vs_affine_only_run": {
+   "max_abs_param_diff": 0.0,
+   "fixed_params_equal": true
+  }
+ }
+]

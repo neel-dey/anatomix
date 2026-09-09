@@ -1,70 +1,49 @@
 #!/usr/bin/env bash
-# Install the FireANTs registration backend for anatomix.
-#
-# FireANTs (upstream: https://github.com/rohitrango/FireANTs) is the GPU
-# diffeomorphic registration library that powers ``anatomix-register.py``. This
-# script installs the anatomix author's fork
-# (https://github.com/neel-dey/FireANTs) as a gitignored, editable clone next to
-# this file, so the backend is never committed into anatomix. FireANTs is
-# distributed under its own license -- the custom "FireANTs License v1.0" (see
-# ``fireants/LICENSE`` after cloning), which is more restrictive than Apache-2.0.
-#
-# Usage:
-#   bash install_fireants.sh                 # full install, WITH fused-ops (recommended)
-#   bash install_fireants.sh --no-fused-ops  # skip the fused-ops CUDA extension
-#
-# The fused-ops CUDA extension (module: fireants_fused_ops) is built by default
-# and is a speed optimization: the pure-PyTorch fallback is numerically
-# equivalent, just slower. Building it needs a CUDA toolkit whose version matches
-# your PyTorch build (e.g. for a cu130 torch, point CUDA_HOME at a CUDA 13.x
-# toolkit and set TORCH_CUDA_ARCH_LIST to your GPU arch, e.g. 12.0 for Blackwell).
+# Install the anatomix author's FireANTs fork as an editable clone next to this script.
+# Usage: bash install_fireants.sh [--no-fused-ops]
+# The fused CUDA kernels need a CUDA toolkit that matches the installed PyTorch
+# build (set CUDA_HOME and TORCH_CUDA_ARCH_LIST if the build cannot find it).
+# FireANTs has its own license; see fireants/LICENSE after cloning.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLONE="${HERE}/fireants"
 REPO_URL="https://github.com/neel-dey/FireANTs"
+# Revision this pipeline was verified against (includes dimensionless
+# translation for rigid/affine stages). An existing clone is left as it is.
+FIREANTS_REV="1b39f6d1aa39ecbe2c8e2d478bce15d4a1c93cfa"
 
 WITH_FUSED_OPS=1
 if [ "${1:-}" = "--no-fused-ops" ]; then
     WITH_FUSED_OPS=0
 fi
 
-# 1. Clone the fork (skip if already present).
 if [ ! -d "${CLONE}/.git" ]; then
     echo ">> Cloning FireANTs into ${CLONE}"
     git clone "${REPO_URL}" "${CLONE}"
+    git -C "${CLONE}" checkout --quiet "${FIREANTS_REV}"
 else
     echo ">> FireANTs clone already present at ${CLONE} (skipping clone)"
 fi
 
-# 2. Editable install WITHOUT dependencies. This protects the environment's
-#    existing (e.g. Blackwell / CUDA-specific) torch build: FireANTs only
-#    requires torch>=2.3.0, which the anatomix environment already satisfies.
-echo ">> pip install -e (--no-deps) FireANTs"
+# --no-deps keeps the environment's PyTorch build.
+echo ">> pip install -e FireANTs"
 python -m pip install -e "${CLONE}" --no-deps
-
-# 3. Install FireANTs' runtime dependencies, excluding torch and numpy (already
-#    present) and the defunct upstream 'typing' backport.
-echo ">> Installing FireANTs runtime dependencies"
 python -m pip install \
     "SimpleITK>=2.2.1" nibabel scipy scikit-image matplotlib tqdm pandas hydra-core
 
-# 4. Build the fused-ops CUDA extension (module: fireants_fused_ops) by default.
 if [ "${WITH_FUSED_OPS}" = "1" ]; then
-    echo ">> Building fused-ops CUDA extension (faster; results are unchanged)"
+    echo ">> Building the fused-ops CUDA extension"
     if ! ( cd "${CLONE}/fused_ops" && python setup.py build_ext && python setup.py install ); then
-        echo "!! WARNING: fused-ops build failed. FireANTs will use its"
-        echo "!! pure-PyTorch path, which is numerically equivalent but slower."
-        echo "!! To get the speedup, ensure a CUDA toolkit matching your torch"
-        echo "!! build is available (CUDA_HOME / TORCH_CUDA_ARCH_LIST) and re-run."
+        echo "!! fused-ops build failed; FireANTs will use its slower pure-PyTorch path."
+        echo "!! Make a CUDA toolkit matching your torch build visible (CUDA_HOME,"
+        echo "!! TORCH_CUDA_ARCH_LIST) and re-run to get the speedup."
     fi
 else
-    echo ">> Skipping fused-ops extension (--no-fused-ops)."
-    echo ">> The pure-PyTorch path is numerically equivalent, just slower."
+    echo ">> Skipping the fused-ops extension (--no-fused-ops)."
 fi
 
-# 5. Smoke-import.
-echo ">> Verifying: import fireants"
+echo ">> Verifying the installation"
 python -c "import fireants; print('FireANTs OK:', fireants.__file__)"
 if [ "${WITH_FUSED_OPS}" = "1" ]; then
     python -c "import torch, fireants_fused_ops; print('fused-ops OK')" \

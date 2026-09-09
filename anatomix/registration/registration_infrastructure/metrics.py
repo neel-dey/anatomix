@@ -7,22 +7,7 @@ from ._fireants import jacobian
 
 
 def dice_score(fixed_seg, moved_seg):
-    """Macro-averaged Dice between a fixed and a warped moving segmentation.
-
-    Parameters
-    ----------
-    fixed_seg, moved_seg : array_like
-        Integer label volumes of identical shape (on the fixed grid). Dice is
-        computed over the nonzero labels present in ``fixed_seg`` (background
-        label 0 is excluded).
-
-    Returns
-    -------
-    float
-        Macro-averaged Dice (``sklearn.metrics.f1_score`` with
-        ``average='macro'``), or ``nan`` if ``fixed_seg`` has no foreground
-        label.
-    """
+    """Mean Dice over nonzero labels present in fixed_seg; NaN if none exist."""
     gt = np.asarray(fixed_seg).astype(np.int64).flatten()
     pred = np.asarray(moved_seg).astype(np.int64).flatten()
     labels = [int(v) for v in np.unique(gt) if v != 0]
@@ -34,22 +19,9 @@ def dice_score(fixed_seg, moved_seg):
 
 
 def keypoint_metrics(warped, target, source):
-    """Target-registration-error statistics for one keypoint set.
+    """Compute TRE in mm and fraction improved for corresponding (K,3) point arrays.
 
-    Parameters
-    ----------
-    warped, target, source : array_like
-        Corresponding physical (mm) coordinates ``(K, 3)``: the fixed keypoints
-        mapped through the transform, the ground-truth moving keypoints, and
-        the fixed keypoints before warping. The initial error compares the last
-        two directly, so it assumes both images share a world frame.
-
-    Returns
-    -------
-    dict
-        ``tre_median``, ``tre_mean``, ``tre_initial_median`` (mm) and
-        ``robustness``, the fraction of keypoints whose error decreased.
-    """
+    Source and target must share a physical frame; correspondence is by row."""
     warped = np.asarray(warped, dtype=np.float64)
     target = np.asarray(target, dtype=np.float64)
     source = np.asarray(source, dtype=np.float64)
@@ -63,21 +35,22 @@ def keypoint_metrics(warped, target, source):
     }
 
 
-def count_folds(warped_coordinates):
-    """Count folded voxels (non-positive Jacobian determinant) in a warp.
+def count_folds(warped_coordinates, fixed_images=None, moving_images=None):
+    """Count interior voxels with non-positive physical Jacobian determinant.
 
-    Parameters
-    ----------
-    warped_coordinates : torch.Tensor
-        Cumulative sampling grid ``(1, H, W, D, 3)`` (normalized coordinates).
-
-    Returns
-    -------
-    int
-        Number of interior voxels whose Jacobian determinant is ``<= 0``; the
-        one-voxel border is excluded before the determinant.
-    """
+    Pass both image geometries when their orientations may differ. Without them,
+    count in normalized coordinates (assumes matching handedness). Excludes the
+    one-voxel border and rejects non-finite determinants."""
     jac = jacobian(warped_coordinates).permute(0, 2, 3, 4, 1, 5)
     jac = jac[:, 1:-1, 1:-1, 1:-1, :]
     det = torch.linalg.det(jac)
+    if (fixed_images is None) != (moving_images is None):
+        raise ValueError("Provide both fixed and moving geometries, or neither.")
+    if fixed_images is not None:
+        # Header handedness can reverse normalized axes without a physical fold.
+        fixed_det = torch.linalg.det(fixed_images.get_torch2phy()[:, :3, :3])
+        moving_det = torch.linalg.det(moving_images.get_torch2phy()[:, :3, :3])
+        det = det * (moving_det / fixed_det)[:, None, None, None]
+    if not torch.isfinite(det).all():
+        raise ValueError("Transform has non-finite Jacobian determinants.")
     return int((det <= 0).sum().item())

@@ -1,269 +1,318 @@
-# Training-free 3D multi-modality registration with anatomix + FireANTs
+# 3D registration with anatomix + FireANTs
 
-### [FireANTs tutorial notebook](tutorials/anatomix_registration_fireants.ipynb) | [Legacy ConvexAdam tutorial](tutorials/anatomix_registration_convexadam.ipynb)
+`anatomix-register.py` registers a moving 3D volume onto a fixed one with
+[FireANTs](https://github.com/rohitrango/FireANTs). The images it matches are
+anatomix network features, MIND-SSC descriptors, or raw intensities, so no
+dataset-specific training is needed. It supports rigid, affine and deformable
+stages, masks, label propagation, landmarks, initial transforms, transform
+export in ANTs/SciPy/PyTorch/inverse form, and batch processing.
 
-`anatomix-register.py` registers arbitrary **3D** volume pairs with no
-dataset-specific training. It extracts contrast-invariant anatomix features
-(and/or a hand-crafted MIND-SSC descriptor, and/or the raw intensities) and
-aligns them with
-[**FireANTs**](https://github.com/rohitrango/FireANTs), a GPU diffeomorphic
-registration library. You get rigid / affine / deformable stages, masked and
-unmasked losses, optional label warping with Dice, optional keypoint warping
-with target-registration error, ANTs / SciPy / PyTorch transform export, and
-fold counting — in single-pair and batch modes.
+[Tutorial notebook](tutorials/anatomix_registration_fireants.ipynb) ·
+[Measured results](tests/README.md)
 
-> This is the general registration backend for anatomix. The ICLR'25 ConvexAdam
-> path is retained unchanged (see [below](#reproducing-the-iclr25-convexadam-results)).
+## Install
 
-Only `anatomix-register.py` and this `README.md` sit at the top of this folder;
-everything else lives in subfolders (`registration_infrastructure/` = the
-pipeline, `registration_backend/` = FireANTs + ConvexAdam, `tutorials/`).
-
-## Install the FireANTs backend
-
-FireANTs is not an anatomix dependency; install it once as a gitignored editable
-clone of the author's fork:
+In your anatomix Python environment, from this directory:
 
 ```bash
-bash registration_backend/install_fireants.sh                 # full install, WITH fused-ops (recommended)
-bash registration_backend/install_fireants.sh --no-fused-ops  # skip fused-ops (slower, same results)
+bash registration_backend/install_fireants.sh   # add --no-fused-ops to skip the CUDA build
 ```
 
-The fused-ops CUDA kernels are built **by default** as a speed optimization; the
-pure-PyTorch fallback is numerically equivalent, so skipping them costs time, not
-accuracy. Compiling them needs a CUDA toolkit matching your PyTorch build (e.g.
-for a `cu130` torch, point `CUDA_HOME` at a CUDA 13.x toolkit and set
-`TORCH_CUDA_ARCH_LIST` to your GPU arch, e.g. `12.0` for Blackwell).
-`scikit-learn` (for Dice) is already an anatomix dependency.
+This clones the [anatomix author's FireANTs fork](https://github.com/neel-dey/FireANTs)
+at the tested revision into `registration_backend/fireants/` (gitignored) and
+installs it. The fused CUDA kernels need a CUDA toolkit that matches your
+PyTorch build; without them FireANTs runs its slower pure-PyTorch code.
 
-## Worked recipes
-
-The CLI defaults (a single deformable `cc` stage on `anatomix-dev-vit` features
-over a 6→4→2→1 pyramid) are modality-agnostic — a starting point, not a tuned
-configuration, since good parameters depend on the anatomy, the voxel size, and
-how far apart the images start. The recipe below therefore spells out **every**
-value it tunes.
-
-### Learn2Reg AbdomenMRCT — abdominal MR→CT, evaluated with labels
-
-One command registers an MR→CT pair with the reference configuration
-(`anatomix-dev-vit` features, a single deformable `masked_cc` stage over a
-6→4→2→1 pyramid, dataset-tuned `21x13x11x9` CC kernels, masks, and labels):
+## Usage
 
 ```bash
-python anatomix-register.py \
-    --fixed CT.nii.gz --moving MR.nii.gz \
-    --fixed-mask CT_mask.nii.gz --moving-mask MR_mask.nii.gz \
-    --fixed-seg CT_seg.nii.gz --moving-seg MR_seg.nii.gz \
-    --backbone anatomix-dev-vit --step-size 1.0 --cc-kernel-widths 21x13x11x9 \
-    --fixed-minclip -450 --fixed-maxclip 450 --moving-minclip 0 --moving-maxclip 20000 \
-    --output-dir out --exp-name mrct
+python anatomix-register.py --fixed fixed.nii.gz --moving moving.nii.gz --output-dir out
 ```
 
-Run it over all 8 AbdomenMRCT pairs by swapping the single-pair inputs for a CSV
-(`--registration-pairs-csv pairs.csv`, columns
-`fixed,moving,fixed_mask,moving_mask,fixed_seg,moving_seg`, one row per pair) —
-this reaches **mean macro-Dice ≈ 0.879 with ~0 folds**, matching the reference
-`anatomix-dev-vit` result. The dataset-specific `21x13x11x9` CC schedule is passed
-explicitly; omit it and each stage falls back to FireANTs' default kernel (which
-does not reach zero folds).
+The interface follows the ANTs command-line tools: one flag per input, comma
+separated per-stage lists, `x` separated pyramid schedules. Types: `PATH` is
+a file, `DIR` a directory, `N` an integer, `F` a float, `A,B` one value per
+stage, `AxB` one value per pyramid level.
 
-## The CLI, in brief
+```
+Inputs (choose one mode)
+  --fixed PATH, --moving PATH          One pair of scalar 3D NIfTI images.
+  --fixed-dir DIR, --moving-dir DIR    Batch: directories paired by sorted filename.
+  --registration-pairs-csv PATH        Batch: CSV with columns fixed,moving[,fixed_mask,moving_mask,
+                                       fixed_seg,moving_seg,fixed_keypoints,moving_keypoints,initial_transform].
 
-`python anatomix-register.py --help` prints the complete interface (including the
-`--custom-*` backbone flags). The parts you'll usually touch:
+Optional inputs (pair mode)
+  --fixed-mask PATH, --moving-mask PATH  Foreground masks (>0), on their own image's grid.
+  --fixed-seg PATH, --moving-seg PATH    Integer label maps; moving labels are propagated, both give Dice.
+  --fixed-keypoints PATH               CSV with x,y,z columns; the points are mapped into moving space.
+  --moving-keypoints PATH              Corresponding points, row by row; gives landmark error (TRE).
+  --keypoint-convention lps|ras|voxel  Coordinates of the keypoint CSVs (default lps = ITK mm).
+  --initial-transform PATH             Linear transform applied first: ITK/ANTs .mat/.txt/.tfm/.h5 or FreeSurfer .lta.
+  Directory batch mode takes the same inputs as directories: --fixed-mask-dir, --moving-mask-dir,
+  --fixed-seg-dir, --moving-seg-dir, --fixed-keypoints-dir, --moving-keypoints-dir, --initial-transform-dir.
+  CSV batch mode takes them as columns.
+  --fixed-minclip F, --fixed-maxclip F, --moving-minclip F, --moving-maxclip F
+                                       Intensity clipping before min-max normalization.
 
-**Input modes** — exactly one of:
-- **Single pair:** `--fixed` / `--moving`.
-- **Directory batch:** `--fixed-dir` / `--moving-dir` (equal counts, paired by
-  filename sort; optional `--fixed-mask-dir`, `--moving-mask-dir`,
-  `--fixed-seg-dir`, `--moving-seg-dir`, `--fixed-keypoints-dir`,
-  `--moving-keypoints-dir`). Use CSV mode if filenames don't correspond by sort
-  order.
-- **CSV batch:** `--registration-pairs-csv` — header `fixed,moving` plus optional
-  `fixed_mask,moving_mask,fixed_seg,moving_seg,fixed_keypoints,moving_keypoints`;
-  empty cells mean "absent", relative paths resolve against the CSV. Any other
-  column is carried through to the metrics CSV untouched; the metric names
-  themselves are reserved and rejected as input columns.
+Transform chain
+  --initialization none|image-centers|center-of-mass|moments   Closed-form start (default none).
+  --transform A,B                      Stages from rigid, affine, deformable, in that order (default deformable).
+  --loss A,B                           cc, mi, mse or masked_cc, masked_mi, masked_mse per stage
+                                       (default masked_cc when a mask is given, else cc).
+  --step-size A,B                      Adam learning rate per stage (default 0.01 linear, 1.0 deformable).
+  --translation-step-size A,B          Translation learning rate of linear stages (default = --step-size); na for deformable.
+  --shrink-factors AxB,AxB             Pyramid per stage, strictly decreasing (default 6x4x2x1).
+  --iterations AxB,AxB                 Iterations per level (default 100 each).
+  --cc-kernel-widths AxB,AxB           Odd local-CC window widths per level; na for mi/mse stages.
+  --smooth-grad-sigma A,B, --smooth-warp-sigma A,B
+                                       Deformable regularization in voxels (default 1.0 and 0.5); na for linear stages.
+  --tolerance F                        Early-stopping tolerance on the loss slope (default 1e-6; inf disables).
 
-**Masks and labels** — provide **both** masks or neither. Masks gate the primary
-feature family (network features, or the raw intensity for `--features intensity`)
-and, for a `masked_*` loss, become FireANTs' loss mask. A **moving**
-segmentation is required to warp labels; add a **fixed** segmentation to also get
-Dice (background label 0 excluded). Each mask/segmentation must be on **its own
-image's grid** (same shape and voxel-to-world affine) — it is consumed voxelwise,
-never resampled — and this is checked from the headers before anything loads.
+Features
+  --features anatomix+mindssc|anatomix|mindssc|intensity   What is registered (default anatomix+mindssc).
+  --backbone anatomix|anatomix-dev|anatomix-dev-vit|custom  Network (default anatomix-dev-vit).
+  --isotropic-features 0|1             Extract network/MIND features on an isotropic grid (default 1).
+  --sliding-window-params W,B,O,M,S    MONAI sliding window: size, batch, overlap, mode, sigma (default 128,4,0.8,gaussian,0.25).
+  --feature-normalization l2|standardized|none   Per-voxel normalization of network features (default l2).
+  --mindssc-params R,D                 MIND-SSC radius and dilation (default 1,2).
+  --custom-arch unet|vit, --custom-weights PATH, --unet-*, --vit-*   Own checkpoints (see --help).
 
-**Keypoints** — landmarks are the label-free way to evaluate a registration. A
-keypoint file is a CSV with `x,y,z` columns (case-insensitive; any other column,
-such as a landmark id, is preserved in the output). The transform maps
-*fixed*-image points into moving space, so `--fixed-keypoints` is the set that
-gets warped and written out (`moved-keypoints-<stem>.csv`) and
-`--moving-keypoints` is the optional ground truth that turns on
-target-registration error; moving keypoints therefore **require** fixed ones —
-the opposite of the segmentation rule. `--keypoint-convention` selects `lps`
-(default; ITK/SimpleITK world mm), `ras` (nibabel/NIfTI world mm) or `voxel`
-(ITK continuous index `(i,j,k)`); TRE is always reported in millimetres. In
-batch mode they are the `fixed_keypoints` / `moving_keypoints` CSV columns (or
-the `--fixed-keypoints-dir` / `--moving-keypoints-dir` directories). Keypoints
-never influence the optimization, and carry no voxel grid, so no geometry check
-applies to them.
+Outputs
+  --output-dir DIR                     Where everything is written (default .).
+  --exp-name NAME                      Prefix for every output file.
+  --output-transformation-convention ants|scipy|pytorch   Transform file format (default ants).
+  --collapse-output-transforms 1|0     1: one final transform; 0: one cumulative snapshot per stage.
+  --save-inverse                       Also write the moving-to-fixed transform and the fixed image on the moving grid.
 
-**The transform chain** — `--transform` is a comma-separated list of stages from
-`{rigid,affine,deformable}`, ordered `rigid ≤ affine ≤ deformable` (repeated
-`deformable` allowed). Every per-stage list has one entry per stage; pyramid
-schedules are `AxBx...`.
+Run control
+  --device auto|cpu|cuda|cuda:N        auto picks the visible GPU with the most free memory.
+  --seed N                             Random seed (default 12345).
+  --verbose / --no-verbose             Print inputs, stage progress, metrics and peak GPU memory.
+```
 
-Every stage after the first re-registers the moving image *as already
-transformed*: it is warped by the running cumulative transform and its features
-are **re-extracted** on the fixed grid, because the anatomix extractor is not
-warp-equivariant — resampled features do not match features computed from the
-warped image. Each stage then optimizes an identity-initialized residual, which
-composes onto the running transform (linear residuals multiply as matrices,
-deformable ones compose as coordinate fields). A multistage chain therefore
-costs one extra feature extraction per stage. The original moving image and
-label are still resampled exactly once, by the final cumulative transform, so
-interpolation error never accumulates into the outputs.
+<details>
+<summary><b>Inputs and file formats</b></summary>
 
-Defaults reproduce the SOTA single-deformable setup:
+Images are scalar 3D NIfTI files (`.nii`, `.nii.gz`). Fixed and moving may
+differ in shape, spacing, orientation and field of view; the moving image is
+resampled onto the fixed grid internally, and all transforms are defined in
+physical space. Each mask or segmentation must have the shape and affine of
+its own image; this is checked from the headers before anything is loaded.
 
-| flag | meaning | default |
-|------|---------|---------|
-| `--transform` | the stage chain | `deformable` |
-| `--initialization` | closed-form `center-of-mass` / `moments` before the chain | `none` |
-| `--loss` | `cc,mi,mse,masked_cc,masked_mi,masked_mse` per stage | `masked_cc` if masks else `cc` |
-| `--step-size` | Adam LR per stage | `1.0` deformable / `0.01` linear |
-| `--shrink-factors` | resolution schedule per stage | `6x4x2x1` |
-| `--iterations` | iters per level (matches shrink) | `100` per level |
-| `--cc-kernel-widths` | odd CC widths per level (`na` for non-CC stages) | FireANTs' default kernel |
-| `--smooth-grad-sigma` / `--smooth-warp-sigma` | deformable regularization (`na` for linear) | `1.0` / `0.5` |
+Masks: positive voxels are foreground. Either mask, both, or neither may be
+given. A mask multiplies the network or intensity channels, and with a
+`masked_*` loss (the default when any mask is present) the loss is restricted
+to the overlap of the fixed mask and the warped moving mask.
 
-Pyramid schedules must be **strictly decreasing**. Every level is floored at 32
-voxels per axis by the backend, so the default's coarsest level is 32³ on the
-reference data — see `FIREANTS_SIZE_REQUIREMENTS.md` for the size limits this
-implies.
+Segmentations: `--moving-seg` is propagated with nearest-neighbour sampling;
+with `--fixed-seg` the mean Dice over the fixed segmentation's non-zero labels
+is written to `metrics.csv`.
 
-**Features** — `--features` picks what is actually registered:
+Keypoints: CSV files with `x,y,z` columns (other columns are kept). The
+transform maps fixed points into moving space, so `--fixed-keypoints` is what
+gets warped; `--moving-keypoints` are the corresponding points, row by row,
+and give the landmark error. `lps` is ITK/ANTs world mm, `ras` is NIfTI/nibabel
+world mm, `voxel` is the ITK continuous index.
 
-| `--features` | channels | loads a backbone? |
-|---|---|---|
-| `anatomix+mindssc` (default) | anatomix features ++ MIND-SSC | yes |
-| `anatomix` | anatomix features | yes |
-| `mindssc` | MIND-SSC only | no |
-| `intensity` | the clipped, min-max normalized image itself | no |
+CSV batch mode: relative paths resolve against the CSV; empty cells mean
+"absent"; any other column is copied into `metrics.csv`. Directory batch mode
+pairs files by sorted name, so the counts must match.
+</details>
 
-`intensity` is the classic single-channel baseline — pair it with `--loss mi`
-for a conventional mutual-information registration.
+<details>
+<summary><b>Stages, initialization and initial transforms</b></summary>
 
-The anatomix families use `--backbone {anatomix, anatomix-dev, anatomix-dev-vit
-(default), custom}`; features are (by default) extracted on an isotropic grid
-(`--isotropic-features`) via MONAI sliding-window inference
-(`--sliding-window-params window,sw_batch,overlap,mode,sigma`, default
-`128,4,0.8,gaussian,0.25`; `anatomix-dev-vit` needs `window=128`) and voxelwise
-normalized (`--feature-normalization l2|standardized|none`). `--mindssc-params
-radius,dilation` configures MIND-SSC. `--backbone custom` takes `--custom-arch
-{unet,vit}` + `--custom-weights` and exposes every constructor argument as a
-`--unet-*` / `--vit-*` flag. For the model-free families the backbone flags are
-inert, and rejected if they would silently do nothing.
+A run first sets a linear transform, then runs the `--transform` stages.
+Every stage resamples the original moving image onto the fixed grid with the
+transform so far, extracts its features there, and fits an identity-initialized
+residual: linear residuals multiply onto the running matrix, deformable
+residuals are composed as coordinate fields. This adds one feature
+extraction per stage. The original moving image and labels are resampled only
+once, by the final transform.
 
-**Device** — `--device auto` (default) picks the visible CUDA GPU with the most
-free memory (so it avoids a busy one); pin explicitly with
-`CUDA_VISIBLE_DEVICES` and/or `--device {auto,cpu,cuda,cuda:N}`.
+Initializations:
 
-Some more examples:
+- `none`: physical identity. Correct when the scans already share a frame.
+- `image-centers` (FireANTs' `cof`): translation that aligns the geometric
+  centers of the two fields of view. Uses headers only.
+- `center-of-mass`: translation that aligns the intensity centers of mass,
+  computed from the clipped, min-max normalized images inside the masks, so
+  signed intensities such as CT are fine. It depends on what the two fields
+  of view contain: on the AbdomenMRCT pairs it moves already aligned scans by
+  30 mm.
+- `moments`: rotation and translation from second-order moments. Principal
+  axes have no sign, so it can return a large rotation (150° on AbdomenMRCT).
+- `--initial-transform`: a file instead. ITK/ANTs files (`.mat`, `.txt`,
+  `.tfm`, `.h5`, e.g. `0GenericAffine.mat` or this tool's own `warp-*.mat`)
+  map fixed to moving physical coordinates. FreeSurfer `.lta` files (RAS-to-RAS
+  or vox-to-vox) map their `src` volume to their `dst` volume; the file's
+  volume geometry is compared with the images to tell which one is `src`, and
+  when neither matches, `src` is taken as the moving image, as `mri_coreg
+  --mov moving --ref fixed` writes it. Cannot be combined with
+  `--initialization`.
+
+Linear stages optimize the rotation (or the full linear part) with
+`--step-size` and the translation with `--translation-step-size` as two
+separate Adam parameter groups. Translation is expressed in units of the fixed
+image's physical radius (the RMS half-extent of its field of view), so the
+same rate works at any voxel size; by default it equals `--step-size`.
+
+Every pyramid level is floored at 32 voxels per axis, so a multi-resolution
+stage needs at least 34 voxels along every axis of both images.
+</details>
+
+<details>
+<summary><b>Features</b></summary>
+
+`anatomix+mindssc` concatenates 32 network channels and 12 MIND-SSC channels;
+`anatomix` and `mindssc` use one family; `intensity` registers the clipped,
+min-max normalized image itself and loads no network. Network weights download
+from Hugging Face on first use. Features are extracted on an isotropic grid at
+the finest spacing and resampled back; on strongly anisotropic images this can
+multiply memory, and `--isotropic-features 0` extracts on the native grid.
+`anatomix-dev-vit` requires a 128-voxel window. Changing the sliding-window
+overlap changes the features.
+</details>
+
+<details>
+<summary><b>Losses</b></summary>
+
+`cc` is FireANTs' local normalized cross-correlation (its PyTorch
+implementation; the fused CUDA kernel is not used because its masked variant
+fails and its unmasked variant adds folds, see the measured results). `mi`
+is global mutual information on inputs clamped to [0,1], which is a poor fit
+for signed network features; `mse` is mean squared error. The `masked_`
+variants use the mask channel.
+</details>
+
+## Examples
+
+All numbers are from [tests/README.md](tests/README.md). Choose settings with
+validation labels or landmarks; a lower loss alone does not establish accuracy.
+
+**Abdominal MR→CT (Learn2Reg AbdomenMRCT).** One deformable stage with wide
+CC windows gives mean Dice 0.879 with zero folds over the eight training pairs:
 
 ```bash
-# center-of-mass init, then affine + deformable
 python anatomix-register.py --fixed CT.nii.gz --moving MR.nii.gz \
     --fixed-mask CT_mask.nii.gz --moving-mask MR_mask.nii.gz \
-    --initialization center-of-mass --transform affine,deformable \
-    --shrink-factors 4x2x1,8x4x2x1 --iterations 100x100x50,100x100x100x100 \
-    --cc-kernel-widths 7x5x3,21x13x11x9
-
-# batch over a CSV
-python anatomix-register.py --registration-pairs-csv pairs.csv --output-dir out
-
-# MIND-SSC only (no network backbone is loaded/downloaded)
-python anatomix-register.py --fixed CT.nii.gz --moving MR.nii.gz --features mindssc
-
-# raw-intensity mutual information, the conventional baseline
-python anatomix-register.py --fixed T1.nii.gz --moving FLAIR.nii.gz \
-    --features intensity --loss mi
-
-# warp the fixed landmarks and report TRE against the moving ones
-python anatomix-register.py --fixed T1.nii.gz --moving FLAIR.nii.gz \
-    --fixed-keypoints T1_landmarks.csv --moving-keypoints FLAIR_landmarks.csv \
-    --keypoint-convention lps
+    --fixed-seg CT_seg.nii.gz --moving-seg MR_seg.nii.gz \
+    --transform deformable --step-size 1.0 --shrink-factors 6x4x2x1 \
+    --iterations 100x100x100x100 --cc-kernel-widths 21x13x11x9 \
+    --fixed-minclip -450 --fixed-maxclip 450 --moving-minclip 0 --moving-maxclip 20000 \
+    --output-dir abdomen-out
 ```
 
-## Outputs and transforms
+These scans are already aligned; rigid/affine stages and center-of-mass
+initialization lower the Dice.
 
-Per pair, in `--output-dir` (with an optional `--exp-name` prefix):
-
-- `moved-<stem>.nii.gz` — moving image warped onto the fixed grid (trilinear).
-- `moved-seg-<stem>.nii.gz` — moving label warped (nearest), if a moving seg was given.
-- `moved-keypoints-<stem>.csv` — fixed keypoints mapped into moving space, in
-  the input file's own columns and coordinate convention, if fixed keypoints
-  were given.
-- `warp-<stem>.<ext>` — the transform.
-- `metrics.csv` — input columns plus `dice`, `num_folds`, and the keypoint
-  metrics `tre_median`, `tre_mean`, `tre_initial_median` (all mm) and
-  `robustness` (the fraction of keypoints whose error decreased). Metric cells
-  are blank when the pair lacks the inputs they need. Written incrementally, one
-  row per completed pair.
-
-`--output-transformation-convention {ants,scipy,pytorch}` all represent the
-**full cumulative transform** for every chain (including composed
-rigid/affine→deformable and repeated-deformable): `ants` → an ITK vector
-displacement field `.nii.gz` (linear-only → `.mat`); `scipy` → a Learn2Reg-format
-`.npz`; `pytorch` → the normalized fixed→moving sampling grid `.pt`
-(`[1,H,W,D,3]`). `--collapse-output-transforms 1` (default) writes one composed
-transform; `0` writes one cumulative snapshot per stage.
-
-**The `ants` outputs are directly compatible with the original ANTs library.**
-Applying them with `antsApplyTransforms` reproduces our warped labels bit-for-bit
-and our Dice exactly (verified across single-deformable, composed
-rigid/affine→deformable, and linear `.mat` outputs):
+**Longitudinal brain scans with landmarks (BraTS-Reg).** Skull-stripped scans
+in one frame:
 
 ```bash
-antsApplyTransforms -d 3 -i MR.nii.gz  -r CT.nii.gz -t warp-MR.nii.gz -o moved-MR.nii.gz
-antsApplyTransforms -d 3 -i MR_seg.nii.gz -r CT.nii.gz -t warp-MR.nii.gz -n NearestNeighbor -o moved-seg-MR.nii.gz
+python anatomix-register.py --fixed baseline_t1.nii.gz --moving followup_flair.nii.gz \
+    --fixed-mask baseline_brainmask.nii.gz --moving-mask followup_brainmask.nii.gz \
+    --fixed-keypoints baseline_landmarks.csv --moving-keypoints followup_landmarks.csv \
+    --transform deformable --step-size 0.1 --shrink-factors 4x2x1 \
+    --iterations 200x100x50 --cc-kernel-widths 7x5x3 --output-dir brain-out
 ```
 
-To apply a saved `pytorch` grid yourself, note it is in FireANTs' SimpleITK array
-axis order `(z,y,x)` — the reverse of nibabel's `(x,y,z)` — so transpose a
-nibabel-loaded volume first (otherwise the warp is silently axis-scrambled on
-non-cubic volumes):
+For cases that start tens of mm apart, add an affine stage:
+`--transform affine,deformable --step-size 0.01,0.1 --shrink-factors
+4x2x1,4x2x1 --iterations 100x100x100,200x100x50 --cc-kernel-widths
+9x7x5,7x5x3 --smooth-grad-sigma na,1.0 --smooth-warp-sigma na,0.5`
+(case 107: 26.3 mm → 3.8 mm). Compare `tre_median` with `tre_initial_median`
+per case.
 
-```python
-import torch, torch.nn.functional as F, nibabel as nib
-grid = torch.load("out/mrct-warp-MR.pt")              # [1, H, W, D, 3], fixed->moving
-mov = nib.load("MR.nii.gz").get_fdata()               # (x, y, z)
-mov = torch.tensor(mov).permute(2, 1, 0)[None, None]  # -> (z, y, x) = FireANTs order
-moved = F.grid_sample(mov.float(), grid, mode="bilinear", align_corners=True)
-```
+**Rigid or affine only.** `--transform rigid` (or `affine`) with `--step-size
+0.01 --shrink-factors 4x2x1 --iterations 100x100x100 --cc-kernel-widths
+9x7x5`. The intensity baseline needs no network: `--features intensity
+--loss mi` (or `cc`/`mse` within one modality).
 
-## Reproducing the ICLR'25 ConvexAdam results
+**Whole-body scans.** CT→CT (PSMAReg) and MR→CT on native grids both work
+with `--initialization center-of-mass` or `image-centers`, `--transform
+rigid,deformable`, and a pyramid such as `8x4x2x1` with CC windows
+`15x11x9x5`. GPU memory grows with fixed-grid voxels × channels (45 with a
+mask): a 2 mm whole-body grid (33M voxels) needs 63 GB with the pyramid
+stopping at shrink 2 (`--shrink-factors 8x4x2`) and more than 96 GB at full
+resolution; native 1 mm whole-body scans do not fit. Resample them to 2–3 mm
+first, or use `--features intensity`.
 
-The ICLR'25 anatomix registration numbers came from a ConvexAdam backend, kept
-unchanged under `registration_backend/convexadam/` and demonstrated in
-[`tutorials/anatomix_registration_convexadam.ipynb`](tutorials/anatomix_registration_convexadam.ipynb).
+**Starting from an existing transform.**
+`--initial-transform previous/warp-moving.mat` (or `reg.lta` from
+`mri_coreg`) followed by `--transform deformable` gives the same result as the
+corresponding chain run in one go.
 
-This backend is no longer maintained and kept for legacy purposes. It will be removed in a future commit.
+## Outputs
 
-Import it directly
-(`from anatomix.registration.registration_backend.convexadam import convex_adam`)
-or use its own `run_convex_adam_with_network_feats.py`. It is not exposed by the
-FireANTs-only `anatomix-register.py`.
+Files use the moving filename stem, prefixed by `--exp-name` when given:
+
+| File | Contents |
+|---|---|
+| `moved-*.nii.gz` | Moving image on the fixed grid (trilinear). |
+| `moved-seg-*.nii.gz` | Propagated labels (nearest). |
+| `moved-keypoints-*.csv` | Fixed landmarks mapped into moving space. |
+| `warp-*` | The transform (see below). |
+| `inverse-warp-*`, `inverse-moved-*` | With `--save-inverse`: the moving-to-fixed transform on the moving grid, and the fixed image (and segmentation) resampled onto the moving grid. |
+| `metrics.csv` | Input columns plus `dice`, `num_folds`, `tre_median`, `tre_mean`, `tre_initial_median`, `robustness` (fraction of landmarks improved) and `inverse_residual_mm`; one row per pair, written as each pair completes. |
+
+All `warp-*` transforms map **fixed coordinates to moving coordinates**, the
+direction that resamples the moving image onto the fixed grid:
+
+- `ants` (default): a linear `.mat` for rigid/affine chains, otherwise an ITK
+  displacement field `.nii.gz` in LPS mm. Apply with
+  `antsApplyTransforms -d 3 -i moving.nii.gz -r fixed.nii.gz -t warp-moving.nii.gz -o out.nii.gz`
+  (`-n NearestNeighbor` for labels).
+- `pytorch`: a `.pt` sampling grid `(1,Z,Y,X,3)` of normalized moving
+  coordinates for `grid_sample(..., align_corners=True)`; transpose nibabel
+  arrays from `(X,Y,Z)` to `(Z,Y,X)` first (see the notebook).
+- `scipy`: `.npz` with `arr_0` of shape `(X,Y,Z,3)` such that
+  `moving_index = fixed_index + arr_0`, for `scipy.ndimage.map_coordinates`;
+  linear-only chains store `affine`, the physical LPS-mm matrix, instead.
+
+ANTs, SciPy and PyTorch application of these files reproduce the CLI's moved
+image to about 1e-6 relative error inside the moving field of view; the
+libraries differ at its border. `--collapse-output-transforms 0` writes one
+cumulative snapshot per stage (`warp-*-init`, `warp-*-0-affine`, ...), which
+must not be composed again. Dense inverses are computed numerically;
+`inverse_residual_mm` is the largest inverse-consistency error inside the
+fixed FOV (0.002 mm on fold-free abdominal fields, larger where a field is
+near-singular).
+
+`num_folds` counts interior fixed voxels with a non-positive physical Jacobian
+determinant. Repeated deformable stages, initial transforms and initializations
+that move part of the fixed FOV outside the moving image add clamped border
+voxels to this count; those are not anatomical folds, but inspect results near
+the FOV boundary.
+
+## Not supported
+
+Multi-channel input images (a stack of co-registered modalities; extract
+features yourself with `registration_infrastructure.features`), FireANTs'
+symmetric (SyN) deformation, per-stage feature families, and 2D images.
+
+## Legacy ConvexAdam
+
+The [ConvexAdam backend](registration_backend/convexadam/) and its
+[notebook](tutorials/anatomix_registration_convexadam.ipynb) reproduce the
+ICLR'25 anatomix registration results and are not used by this CLI.
 
 ## Credits and license
 
 Registration is performed by **FireANTs**
 ([repository](https://github.com/rohitrango/FireANTs),
-[documentation](https://fireants.readthedocs.io/en/latest/)); this project uses [my fork](https://github.com/neel-dey/FireANTs) fork. 
-If you use this backend in a paper, please cite FireANTs as well:
+[documentation](https://fireants.readthedocs.io/en/latest/)); this project uses [the anatomix author’s fork](https://github.com/neel-dey/FireANTs).
+If you use this backend in a paper, please cite anatomix and FireANTs:
 
 ```bibtex
+@inproceedings{dey2025learning,
+  title={Learning general-purpose biomedical volume representations using randomized synthesis},
+  author={Dey, Neel and Billot, Benjamin and Wong, Hallee and Wang, Clinton and Ren, Mengwei and Grant, Ellen and Dalca, Adrian and Golland, Polina},
+  booktitle={International Conference on Learning Representations},
+  volume={2025},
+  pages={32033--32064},
+  year={2025}
+}
 @article{jena2024fireants,
   title={FireANTs: Adaptive Riemannian Optimization for Multi-Scale Diffeomorphic Registration},
   author={Jena, Rohit and Chaudhari, Pratik and Gee, James C},

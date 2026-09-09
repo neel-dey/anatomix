@@ -1,16 +1,6 @@
-"""Device-safe MIND-SSC descriptor for the FireANTs registration backend.
+"""MIND-SSC descriptors (Heinrich et al., MICCAI 2013), adapted from ConvexAdam.
 
-MIND-SSC (Modality-Independent Neighbourhood Descriptor -- Self-Similarity
-Context) is a hand-crafted 12-channel local descriptor that is robust to
-contrast differences and therefore well suited to multi-modal registration
-(e.g. MR-to-CT). See Heinrich et al., MICCAI 2013
-(http://mpheinrich.de/pub/miccai2013_943_mheinrich.pdf).
-
-Adapted from the ConvexAdam backend's copy
-(``registration_backend/convexadam/convex_adam_utils.py``): every tensor is
-allocated on the *input's* device rather than hard-coded to CUDA, and ``radius``
-defaults to 1.
-"""
+Tensors follow the input device; channel order matches the reference implementation."""
 import numpy as np
 import torch
 import torch.nn as nn
@@ -18,19 +8,7 @@ import torch.nn.functional as F
 
 
 def pdist_squared(x):
-    """Pairwise squared Euclidean distances between a set of points.
-
-    Parameters
-    ----------
-    x : torch.Tensor
-        Point coordinates of shape ``(1, dims, n_points)``.
-
-    Returns
-    -------
-    torch.Tensor
-        Matrix of pairwise squared distances of shape ``(1, n_points,
-        n_points)``.
-    """
+    """Pairwise squared Euclidean distances between a set of points."""
     xx = (x ** 2).sum(dim=1).unsqueeze(2)
     yy = xx.permute(0, 2, 1)
     dist = xx + yy - 2.0 * torch.bmm(x.permute(0, 2, 1), x)
@@ -40,29 +18,10 @@ def pdist_squared(x):
 
 
 def MINDSSC(img, radius=1, dilation=2):
-    """Compute the 12-channel MIND-SSC descriptor of a 3D volume.
+    """Return 12-channel MIND-SSC on the input tensor's device and dtype.
 
-    Parameters
-    ----------
-    img : torch.Tensor
-        Input volume of shape ``(1, 1, H, W, D)``. The descriptor is allocated
-        on ``img.device`` and returned in ``img.dtype``.
-    radius : int, optional
-        Radius of the self-similarity patch (patch side is ``2 * radius + 1``).
-    dilation : int, optional
-        Dilation of the six-neighbourhood sampling pattern. Default 2.
-
-    Returns
-    -------
-    torch.Tensor
-        MIND-SSC descriptor of shape ``(1, 12, H, W, D)`` on ``img.device``.
-
-    Notes
-    -----
-    The channel ordering matches the reference C++ implementation via the final
-    permutation, so descriptors are interchangeable with the ConvexAdam backend
-    and the published AbdomenMRCT results.
-    """
+    Input shape is (1,1,Z,Y,X); radius controls patch size and dilation the
+    neighbourhood offsets."""
     device = img.device
     dtype = img.dtype
 

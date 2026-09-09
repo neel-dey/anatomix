@@ -1,0 +1,3 @@
+# Tue Sep  8 07:00:24 PM EDT 2026  gpu=1
+anatomix-register.py --registration-pairs-csv /home/scratch/claude-6209785/-autofs-cluster-dalcalab2-users-nd480-mid-projects-migrate-amix-fants-anatomix-anatomix-registration/37294124-4dc2-4951-adad-b827d0b1e9b4/scratchpad/data/brats/pairs.csv --keypoint-convention lps --features intensity --transform affine --loss masked_mi --step-size 0.01 --shrink-factors 4x2x1 --iterations 100x100x100
+exit=0 seconds=23

@@ -1,19 +1,12 @@
 """anatomix 3D registration.
 
-The registration tools live in subpackages so that only ``anatomix-register.py``
-(the FireANTs command-line entry point) and ``README.md`` sit at the top of
-``anatomix/registration/``:
+- ``anatomix-register.py``: the FireANTs command-line entry point.
+- :mod:`.registration_infrastructure`: the pipeline behind it.
+- :mod:`.registration_backend`: the retained ConvexAdam backend, and the
+  gitignored FireANTs clone that ``registration_backend/install_fireants.sh``
+  creates.
 
-- :mod:`anatomix.registration.registration_infrastructure` -- the FireANTs
-  feature-registration pipeline that backs ``anatomix-register.py``.
-- :mod:`anatomix.registration.registration_backend.convexadam` -- the retained
-  ConvexAdam backend used for the ICLR'25 results.
-- ``registration_backend/fireants`` -- a gitignored, editable FireANTs clone,
-  installed separately via ``registration_backend/install_fireants.sh``.
-
-Submodules are imported lazily so that ``import anatomix.registration`` stays
-cheap and never eagerly imports FireANTs (an optional, separately installed
-backend).
+Subpackages import lazily, so importing this package never imports FireANTs.
 """
 
 __all__ = ["registration_infrastructure", "registration_backend"]

@@ -1,23 +1,15 @@
-"""End-to-end orchestration for the FireANTs registration CLI.
-
-Loads the backbone once (when ``--features`` needs one), then processes each
-fixed/moving pair sequentially: preprocess -> feature extraction -> feature
-image assembly (with optional mask channel) -> multi-stage FireANTs
-registration -> warp the original moving image and label onto the fixed
-geometry and the fixed keypoints into moving space -> Dice, TRE and fold
-metrics -> a per-pair row in the metrics CSV. Batch pairs are processed one at
-a time so arbitrary shapes are supported and GPU memory stays bounded.
-"""
+"""Register pairs sequentially, then write images, transforms, labels and metrics."""
 import csv
 import math
 import os
 import random
 from collections import Counter
 
+import nibabel as nib
 import numpy as np
 import torch
 
-from ._fireants import FFO_AVAILABLE, FakeBatchedImages, apply_mask_to_image
+from ._fireants import FFO_AVAILABLE, FakeBatchedImages, generate_image_mask_allones
 from .features import (
     combine_feature_channels,
     load_backbone,
@@ -35,9 +27,12 @@ from .register import run_registration
 from .warp_io import (
     array_spacing,
     as_batch,
+    invert_grid,
     keypoints_from_physical,
     keypoints_to_physical,
     load_image,
+    read_linear_transform,
+    save_inverse_transform,
     save_transforms,
     warp_keypoints,
     warp_volume,
@@ -46,7 +41,7 @@ from .warp_io import (
 
 
 def seed_everything(seed):
-    """Seed Python, NumPy and PyTorch (CPU + CUDA) RNGs (deterministic cuDNN)."""
+    """Seed Python, NumPy and PyTorch, with deterministic cuDNN."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -56,13 +51,7 @@ def seed_everything(seed):
 
 
 def select_device(spec):
-    """Resolve a ``--device`` spec to a :class:`torch.device`.
-
-    ``'auto'`` picks the visible CUDA device with the most free memory, so a
-    shared multi-GPU box does not default onto a busy GPU; ``'cpu'``, ``'cuda'``
-    and ``'cuda:N'`` are honored verbatim. ``CUDA_VISIBLE_DEVICES`` restricts the
-    candidates considered by ``'auto'`` (and the meaning of any index).
-    """
+    """Resolve cpu/cuda/cuda:N; auto chooses the visible GPU with most free memory."""
     if spec == "cpu":
         return torch.device("cpu")
     if spec == "auto":
@@ -78,11 +67,7 @@ def select_device(spec):
 
 
 def resolve_stage_losses(stages, has_masks):
-    """Fill in per-stage default losses for one pair.
-
-    An omitted loss (``None``) becomes ``masked_cc`` when the pair has both masks
-    and ``cc`` otherwise; an explicit loss is left unchanged.
-    """
+    """Default to masked_cc when any mask exists, otherwise cc."""
     resolved = []
     for stage in stages:
         spec = dict(stage)
@@ -92,13 +77,14 @@ def resolve_stage_losses(stages, has_masks):
     return resolved
 
 
-def _mass_image(normalized, mask):
-    """Non-negative, intensity-like volume for the moment initialization.
+def _nifti_geometry(path):
+    """(shape_xyz, RAS affine) from a NIfTI header."""
+    image = nib.load(path)
+    return tuple(int(n) for n in image.shape[:3]), image.affine
 
-    ``normalized`` is already min-max normalized to ``[0, 1]``. When a mask is
-    available the mass is restricted to it, so the center of mass follows the
-    anatomy of interest rather than everything inside the field of view.
-    """
+
+def _mass_image(normalized, mask):
+    """Non-negative intensity mass for moments, restricted to mask foreground if supplied."""
     if mask is None:
         return normalized
     return normalized * (mask > 0).to(normalized.dtype)
@@ -108,10 +94,6 @@ def _validate_pair(pair, label):
     """Validate mask/segmentation/keypoint availability for one pair."""
     has_fixed_mask = pair.get("fixed_mask") is not None
     has_moving_mask = pair.get("moving_mask") is not None
-    if has_fixed_mask != has_moving_mask:
-        raise ValueError(
-            f"{label}: provide both fixed and moving masks, or neither."
-        )
     if pair.get("fixed_seg") is not None and pair.get("moving_seg") is None:
         raise ValueError(
             f"{label}: a fixed segmentation requires a moving segmentation."
@@ -121,21 +103,12 @@ def _validate_pair(pair, label):
         raise ValueError(
             f"{label}: moving keypoints require fixed keypoints."
         )
-    return has_fixed_mask and has_moving_mask
+    return has_fixed_mask or has_moving_mask
 
 
 def process_pair(pair, args, stages, feat_cfg, model, device, prefix, stem,
                  label):
-    """Register one fixed/moving pair and write its outputs.
-
-    ``stem`` is the (batch-disambiguated) output filename stem for this pair.
-
-    Returns
-    -------
-    dict
-        The :data:`METRIC_COLUMNS` for this pair; the Dice and TRE entries are
-        ``""`` when the pair lacks the segmentations or keypoints they need.
-    """
+    """Register one pair, write outputs using its unique stem, and return metrics."""
     has_masks = _validate_pair(pair, label)
     stage_specs = resolve_stage_losses(stages, has_masks)
     any_masked = any(s["loss"].startswith("masked_") for s in stage_specs)
@@ -153,16 +126,16 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, stem,
             flush=True,
         )
 
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
     fixed_img = load_image(pair["fixed"], device)
     moving_img = load_image(pair["moving"], device)
     fixed_spacing = array_spacing(fixed_img)
-    moving_spacing = array_spacing(moving_img)
-    # Coordinate matrices for the keypoints; the images themselves are rebound
-    # to feature tensors below.
-    fixed_geom, moving_geom = fixed_img, moving_img
+    fixed_geom, moving_geom = fixed_img, moving_img  # keypoints need the matrices only
 
-    # Keep the original moving intensity for the final (single) warp.
+    # Keep the original intensities for the final (single) warps.
     moving_raw = moving_img.array.clone()
+    fixed_raw = fixed_img.array.clone() if args.save_inverse else None
 
     fixed_norm = minmax_normalize(
         fixed_img.array, args.fixed_minclip, args.fixed_maxclip,
@@ -176,45 +149,46 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, stem,
     fixed_mask_img = moving_mask_img = None
     fixed_mask_t = moving_mask_t = None
     if has_masks:
-        fixed_mask_img = load_image(pair["fixed_mask"], device)
-        moving_mask_img = load_image(pair["moving_mask"], device)
+        fixed_mask_img = (
+            load_image(pair["fixed_mask"], device) if pair.get("fixed_mask")
+            else generate_image_mask_allones(fixed_img)
+        )
+        moving_mask_img = (
+            load_image(pair["moving_mask"], device) if pair.get("moving_mask")
+            else generate_image_mask_allones(moving_img)
+        )
+        for mask_img, role in ((fixed_mask_img, "fixed"), (moving_mask_img, "moving")):
+            if not torch.isfinite(mask_img.array).all():
+                raise ValueError(f"{label} [{role} mask]: values must be finite.")
+            mask_img.array = (mask_img.array > 0).to(mask_img.array.dtype)
+            if not mask_img.array.any():
+                raise ValueError(f"{label} [{role} mask]: mask has no foreground.")
         fixed_mask_t = fixed_mask_img.array
         moving_mask_t = moving_mask_img.array
 
-    fixed_primary, fixed_mind = prepare_feature_channels(
-        fixed_norm, fixed_spacing, model, **feat_cfg,
-    )
-    moving_primary, moving_mind = prepare_feature_channels(
-        moving_norm, moving_spacing, model, **feat_cfg,
-    )
-    fixed_comb = combine_feature_channels(
-        fixed_primary, fixed_mind, fixed_mask_t, args.features,
-    )
-    moving_comb = combine_feature_channels(
-        moving_primary, moving_mind, moving_mask_t, args.features,
-    )
-    if args.verbose:
-        print(
-            f"  feature channels: fixed={fixed_comb.shape[1]} "
-            f"moving={moving_comb.shape[1]}",
-            flush=True,
+    def feature_image(image, normalized, spacing, mask_t):
+        """Rebind a loaded image to its feature channels (geometry is preserved)."""
+        primary, mind = prepare_feature_channels(
+            normalized, spacing, model, **feat_cfg,
         )
+        image.array = combine_feature_channels(
+            primary, mind, mask_t, args.features, append_mask=any_masked,
+        )
+        image.channels = image.array.shape[1]
+        return image
 
-    # Reuse the loaded images as the feature images (geometry is preserved).
-    fixed_img.array = fixed_comb
-    moving_img.array = moving_comb
-    if any_masked:
-        fixed_img = apply_mask_to_image(fixed_img, fixed_mask_img)
-        moving_img = apply_mask_to_image(moving_img, moving_mask_img)
+    fixed_img = feature_image(fixed_img, fixed_norm, fixed_spacing, fixed_mask_t)
+    if args.verbose:
+        print(f"  feature channels: {fixed_img.channels}", flush=True)
 
     fixed_batch = as_batch(fixed_img)
+    # The moving image only supplies geometry here; its features are always
+    # extracted after resampling onto the fixed grid (see register.py).
     moving_batch = as_batch(moving_img)
 
-    # The moment initialization needs a non-negative mass field, so it runs on
-    # the intensities rather than the features (see ``register``). Same
-    # geometry, so its physical-space transform initializes the stages directly.
+    # Moments use non-negative intensities, not network features.
     init_batches = None
-    if args.initialization != "none":
+    if args.initialization in ("center-of-mass", "moments"):
         init_batches = (
             FakeBatchedImages(_mass_image(fixed_norm, fixed_mask_t),
                               fixed_batch),
@@ -223,42 +197,31 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, stem,
         )
 
     def reextract_moving(grid):
-        """Warp the moving *image* by ``grid`` and re-extract features.
-
-        Every stage after the first needs the moving features in the
-        already-transformed frame. The anatomix extractor is not
-        warp-equivariant, so they are recomputed from the warped moving image
-        (and mask) rather than resampled from the moving feature maps. Always
-        the *original* moving image warped by the *cumulative* grid, so no
-        interpolation error accumulates across stages. The result lives on the
-        fixed grid and carries the fixed geometry.
-        """
+        """Warp original moving intensities/mask, then extract features on the fixed grid."""
         with torch.no_grad():
             warped_norm = warp_volume(moving_norm, grid, "bilinear")
             warped_mask_t = (
                 warp_volume(moving_mask_t, grid, "nearest")
                 if moving_mask_t is not None else None
             )
-            primary, mind = prepare_feature_channels(
-                warped_norm, fixed_spacing, model, **feat_cfg,
-            )
-            comb = combine_feature_channels(
-                primary, mind, warped_mask_t, args.features,
-            )
-        # fixed geometry template
-        warped_img = load_image(pair["fixed"], device)
-        warped_img.array = comb
-        if any_masked:
-            warped_mask_img = load_image(pair["fixed_mask"], device)
-            warped_mask_img.array = warped_mask_t
-            warped_img = apply_mask_to_image(warped_img, warped_mask_img)
-        return as_batch(warped_img)
+            # Reloaded only for its geometry; the array is replaced.
+            warped_img = load_image(pair["fixed"], device)
+            return as_batch(feature_image(
+                warped_img, warped_norm, fixed_spacing, warped_mask_t))
+
+    initial_transform = None
+    if pair.get("initial_transform") is not None:
+        initial_transform = read_linear_transform(
+            pair["initial_transform"],
+            fixed=_nifti_geometry(pair["fixed"]),
+            moving=_nifti_geometry(pair["moving"]),
+        )
 
     result = run_registration(
         fixed_batch, moving_batch, stage_specs,
         initialization=args.initialization, verbose=args.verbose,
         reextract_moving=reextract_moving, has_mask_channel=any_masked,
-        init_images=init_batches,
+        init_images=init_batches, initial_transform=initial_transform,
     )
     grid = result.warped_coordinates
 
@@ -271,14 +234,12 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, stem,
         args.output_dir, prefix, stem,
     )
 
-    num_folds = count_folds(grid)
+    num_folds = count_folds(grid, fixed_batch, moving_batch)
     dice = ""
     if pair.get("moving_seg") is not None:
         moving_seg = load_image(
             pair["moving_seg"], device, is_segmentation=False,
         ).array.float()
-        # Nearest warp on float32 preserves integer labels exactly; int32 holds
-        # any realistic label id (int16 would wrap ids >= 32768).
         moved_seg = warp_volume(moving_seg, grid, "nearest").round().to(
             torch.int32
         )
@@ -295,6 +256,35 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, stem,
     metrics = {col: "" for col in METRIC_COLUMNS}
     metrics["dice"] = dice
     metrics["num_folds"] = num_folds
+
+    if args.save_inverse:
+        grid_inv, residual = invert_grid(grid, fixed_batch, moving_batch)
+        save_inverse_transform(
+            result, grid_inv, args.output_transformation_convention,
+            args.output_dir, prefix, stem,
+        )
+        write_on_geometry(
+            warp_volume(fixed_raw, grid_inv, "bilinear"), moving_batch,
+            os.path.join(args.output_dir, f"{prefix}inverse-moved-{stem}.nii.gz"),
+        )
+        if pair.get("fixed_seg") is not None:
+            fixed_seg_raw = load_image(pair["fixed_seg"], device).array.float()
+            write_on_geometry(
+                warp_volume(fixed_seg_raw, grid_inv, "nearest").round().to(torch.int32),
+                moving_batch,
+                os.path.join(args.output_dir, f"{prefix}inverse-moved-seg-{stem}.nii.gz"),
+            )
+        finite = residual[torch.isfinite(residual)]
+        metrics["inverse_residual_mm"] = (
+            float(finite.max()) if finite.numel() else float("nan"))
+        if args.verbose and finite.numel():
+            print(
+                f"  -> inverse: residual median={float(finite.median()):.4f} "
+                f"max={metrics['inverse_residual_mm']:.4f} mm; "
+                f"{float((finite > 1).float().mean()):.2%} of {finite.numel()} "
+                "moving voxels inside the fixed FOV exceed 1 mm",
+                flush=True,
+            )
 
     moved_kp_path = None
     if pair.get("fixed_keypoints") is not None:
@@ -338,50 +328,31 @@ def process_pair(pair, args, stages, feat_cfg, model, device, prefix, stem,
             f"robustness={metrics['robustness']}",
             flush=True,
         )
+        if device.type == "cuda":
+            peak = torch.cuda.max_memory_allocated(device) / 2 ** 30
+            print(f"  -> peak GPU memory: {peak:.1f} GiB", flush=True)
 
     del (
         fixed_img, moving_img, fixed_geom, moving_geom, fixed_batch,
-        moving_batch, result, grid, moved, fixed_comb, moving_comb,
-        fixed_primary, moving_primary, fixed_mind, moving_mind, moving_raw,
+        moving_batch, result, grid, moved, moving_raw, fixed_raw,
     )
     torch.cuda.empty_cache()
     return metrics
 
 
 def run(args, pairs, input_columns, stages):
-    """Run the pipeline over all pairs and write the metrics CSV.
-
-    Parameters
-    ----------
-    args : argparse.Namespace
-        Fully-resolved CLI arguments.
-    pairs : list of dict
-        Per-pair path dicts (values are absolute paths or ``None``), keyed by
-        ``input_columns``.
-    input_columns : list of str
-        Metrics-CSV input columns, in order.
-    stages : list of dict
-        Per-stage registration specs (a stage's ``loss`` may be ``None`` to
-        request the per-pair default).
-
-    Returns
-    -------
-    list of dict
-        The metrics rows that were written.
-    """
+    """Load the backbone once and process pairs sequentially, flushing each metrics row."""
     seed_everything(args.seed)
     if not FFO_AVAILABLE:
         print(
             "[note] fireants_fused_ops is not available; FireANTs is using its "
-            "pure-PyTorch fallback, which is numerically equivalent but slower. "
+            "pure-PyTorch fallback. "
             "Build the kernels with registration_backend/install_fireants.sh.",
             flush=True,
         )
     device = select_device(args.device)
     if device.type == "cuda":
-        # FireANTs allocates some internal tensors on the *default* CUDA device,
-        # so make that the selected one rather than an unrelated GPU.
-        torch.cuda.set_device(device)
+        torch.cuda.set_device(device)  # FireANTs allocates on the default device
     if args.verbose:
         name = (
             f" ({torch.cuda.get_device_name(device)})"
@@ -416,8 +387,7 @@ def run(args, pairs, input_columns, stages):
     os.makedirs(args.output_dir, exist_ok=True)
     prefix = f"{args.exp_name}-" if args.exp_name else ""
 
-    # Output stems come from the moving basename, with a zero-padded pair index
-    # added when the same basename appears in more than one directory.
+    # Output stems: the moving basename, indexed when it repeats within the batch.
     raw_stems = [strip_nifti_ext(pair["moving"]) for pair in pairs]
     counts = Counter(raw_stems)
     width = max(1, len(str(len(pairs) - 1)))
@@ -426,8 +396,7 @@ def run(args, pairs, input_columns, stages):
         for index, stem in enumerate(raw_stems)
     ]
 
-    # Write the metrics CSV incrementally (one flushed row per completed pair) so
-    # a mid-batch failure preserves the results computed so far.
+    # One flushed row per pair, so a mid-batch failure keeps earlier results.
     fieldnames = list(input_columns) + list(METRIC_COLUMNS)
     csv_path = os.path.join(args.output_dir, f"{prefix}metrics.csv")
     rows = []

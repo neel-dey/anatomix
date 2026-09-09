@@ -1,0 +1,650 @@
+[
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-public/anatomix/notebooks/AbdomenMRCT/imagesTr/AbdomenMRCT_1022_0001.nii.gz",
+    "shape_xyz": [
+      192,
+      160,
+      192
+    ],
+    "spacing_xyz": [
+      2.0,
+      2.0,
+      2.0
+    ],
+    "known_transform": "affine",
+    "masked": true,
+    "features": "intensity",
+    "kind": "rigid",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "legacy",
+    "translation_lr": null,
+    "translation_radius": 1.0,
+    "iterations_per_level": 100,
+    "initial_tre": 16.038797597039984,
+    "tre": 7.008191661299278,
+    "determinant": 1.0,
+    "seconds": 2.665982254082337,
+    "matrix": [
+      [
+        0.9901590347290039,
+        -0.119900643825531,
+        -0.07217246294021606,
+        -4.0566864013671875
+      ],
+      [
+        0.11664976179599762,
+        0.9920268654823303,
+        -0.04770290106534958,
+        27.288070678710938
+      ],
+      [
+        0.07731662690639496,
+        0.03881455957889557,
+        0.9962507486343384,
+        24.36260986328125
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-public/anatomix/notebooks/AbdomenMRCT/imagesTr/AbdomenMRCT_1022_0001.nii.gz",
+    "shape_xyz": [
+      192,
+      160,
+      192
+    ],
+    "spacing_xyz": [
+      2.0,
+      2.0,
+      2.0
+    ],
+    "known_transform": "affine",
+    "masked": true,
+    "features": "intensity",
+    "kind": "rigid",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "1",
+    "translation_lr": 0.01,
+    "translation_radius": 180.96316528320312,
+    "iterations_per_level": 100,
+    "initial_tre": 16.038797597039984,
+    "tre": 4.1538116142581325,
+    "determinant": 1.0,
+    "seconds": 1.8420998849906027,
+    "matrix": [
+      [
+        0.9921168684959412,
+        -0.11641313880681992,
+        -0.046391334384679794,
+        -2.4625244140625
+      ],
+      [
+        0.11413692682981491,
+        0.9922546744346619,
+        -0.04902447387576103,
+        26.085128784179688
+      ],
+      [
+        0.05173911526799202,
+        0.043343041092157364,
+        0.9977196455001831,
+        21.152236938476562
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-public/anatomix/notebooks/AbdomenMRCT/imagesTr/AbdomenMRCT_1022_0001.nii.gz",
+    "shape_xyz": [
+      192,
+      160,
+      192
+    ],
+    "spacing_xyz": [
+      2.0,
+      2.0,
+      2.0
+    ],
+    "known_transform": "affine",
+    "masked": true,
+    "features": "intensity",
+    "kind": "affine",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "legacy",
+    "translation_lr": null,
+    "translation_radius": 1.0,
+    "iterations_per_level": 100,
+    "initial_tre": 16.038797597039984,
+    "tre": 5.611689787793805,
+    "determinant": 1.0069421529769897,
+    "seconds": 1.530209609074518,
+    "matrix": [
+      [
+        1.034508466720581,
+        -0.10010339319705963,
+        -0.08624373376369476,
+        9.706771850585938
+      ],
+      [
+        0.12384169548749924,
+        0.9491098523139954,
+        -0.04694104194641113,
+        22.126113891601562
+      ],
+      [
+        0.05592530965805054,
+        0.07092824578285217,
+        1.0051854848861694,
+        23.3707275390625
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-public/anatomix/notebooks/AbdomenMRCT/imagesTr/AbdomenMRCT_1022_0001.nii.gz",
+    "shape_xyz": [
+      192,
+      160,
+      192
+    ],
+    "spacing_xyz": [
+      2.0,
+      2.0,
+      2.0
+    ],
+    "known_transform": "affine",
+    "masked": true,
+    "features": "intensity",
+    "kind": "affine",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "1",
+    "translation_lr": 0.01,
+    "translation_radius": 180.96316528320312,
+    "iterations_per_level": 100,
+    "initial_tre": 16.038797597039984,
+    "tre": 0.11564979901349591,
+    "determinant": 1.0154221057891846,
+    "seconds": 1.55538799893111,
+    "matrix": [
+      [
+        1.0303215980529785,
+        -0.10014078766107559,
+        -0.04546426981687546,
+        6.55682373046875
+      ],
+      [
+        0.12648731470108032,
+        0.9513395428657532,
+        -0.06717634946107864,
+        24.252731323242188
+      ],
+      [
+        0.0546233095228672,
+        0.06801865994930267,
+        1.0156350135803223,
+        22.286468505859375
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-public/anatomix/notebooks/AbdomenMRCT/imagesTr/AbdomenMRCT_1022_0001.nii.gz",
+    "shape_xyz": [
+      192,
+      160,
+      192
+    ],
+    "spacing_xyz": [
+      2.0,
+      2.0,
+      2.0
+    ],
+    "known_transform": "affine",
+    "masked": true,
+    "features": "anatomix-dev",
+    "kind": "rigid",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "legacy",
+    "translation_lr": null,
+    "translation_radius": 1.0,
+    "iterations_per_level": 100,
+    "initial_tre": 16.038797597039984,
+    "tre": 7.508513595060901,
+    "determinant": 1.0,
+    "seconds": 15.852425531018525,
+    "matrix": [
+      [
+        0.9885095953941345,
+        -0.13796237111091614,
+        -0.06176723167300224,
+        -9.7799072265625
+      ],
+      [
+        0.13483327627182007,
+        0.989488959312439,
+        -0.052264854311943054,
+        31.703781127929688
+      ],
+      [
+        0.06832857429981232,
+        0.04333603382110596,
+        0.9967212080955505,
+        23.145706176757812
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-public/anatomix/notebooks/AbdomenMRCT/imagesTr/AbdomenMRCT_1022_0001.nii.gz",
+    "shape_xyz": [
+      192,
+      160,
+      192
+    ],
+    "spacing_xyz": [
+      2.0,
+      2.0,
+      2.0
+    ],
+    "known_transform": "affine",
+    "masked": true,
+    "features": "anatomix-dev",
+    "kind": "rigid",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "1",
+    "translation_lr": 0.01,
+    "translation_radius": 180.96316528320312,
+    "iterations_per_level": 100,
+    "initial_tre": 16.038797597039984,
+    "tre": 4.169332488010043,
+    "determinant": 1.0,
+    "seconds": 15.283166578039527,
+    "matrix": [
+      [
+        0.9908850789070129,
+        -0.12303191423416138,
+        -0.054862719029188156,
+        -3.1300811767578125
+      ],
+      [
+        0.12040558457374573,
+        0.9915215373039246,
+        -0.04886190965771675,
+        26.971969604492188
+      ],
+      [
+        0.06040913984179497,
+        0.041810762137174606,
+        0.9972976446151733,
+        22.921676635742188
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-public/anatomix/notebooks/AbdomenMRCT/imagesTr/AbdomenMRCT_1022_0001.nii.gz",
+    "shape_xyz": [
+      192,
+      160,
+      192
+    ],
+    "spacing_xyz": [
+      2.0,
+      2.0,
+      2.0
+    ],
+    "known_transform": "affine",
+    "masked": true,
+    "features": "anatomix-dev",
+    "kind": "affine",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "legacy",
+    "translation_lr": null,
+    "translation_radius": 1.0,
+    "iterations_per_level": 100,
+    "initial_tre": 16.038797597039984,
+    "tre": 6.952053783954693,
+    "determinant": 0.9494368433952332,
+    "seconds": 15.038687482941896,
+    "matrix": [
+      [
+        0.9989898204803467,
+        -0.04910850152373314,
+        -0.05166730284690857,
+        3.9471893310546875
+      ],
+      [
+        0.13501523435115814,
+        0.9295389652252197,
+        -0.05934371054172516,
+        24.019683837890625
+      ],
+      [
+        0.044615279883146286,
+        0.09337431937456131,
+        1.0075377225875854,
+        23.8397216796875
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-public/anatomix/notebooks/AbdomenMRCT/imagesTr/AbdomenMRCT_1022_0001.nii.gz",
+    "shape_xyz": [
+      192,
+      160,
+      192
+    ],
+    "spacing_xyz": [
+      2.0,
+      2.0,
+      2.0
+    ],
+    "known_transform": "affine",
+    "masked": true,
+    "features": "anatomix-dev",
+    "kind": "affine",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "1",
+    "translation_lr": 0.01,
+    "translation_radius": 180.96316528320312,
+    "iterations_per_level": 100,
+    "initial_tre": 16.038797597039984,
+    "tre": 0.2286955047645193,
+    "determinant": 1.0222358703613281,
+    "seconds": 15.053154810797423,
+    "matrix": [
+      [
+        1.0320391654968262,
+        -0.10087605565786362,
+        -0.045342765748500824,
+        6.7041473388671875
+      ],
+      [
+        0.12668058276176453,
+        0.9548666477203369,
+        -0.06658357381820679,
+        24.745223999023438
+      ],
+      [
+        0.05441620573401451,
+        0.06898634135723114,
+        1.0169610977172852,
+        22.27435302734375
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-public/anatomix/notebooks/AbdomenMRCT/imagesTr/AbdomenMRCT_1022_0001.nii.gz",
+    "shape_xyz": [
+      192,
+      160,
+      192
+    ],
+    "spacing_xyz": [
+      2.0,
+      2.0,
+      2.0
+    ],
+    "known_transform": "affine",
+    "masked": true,
+    "features": "anatomix-dev-vit",
+    "kind": "rigid",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "legacy",
+    "translation_lr": null,
+    "translation_radius": 1.0,
+    "iterations_per_level": 100,
+    "initial_tre": 16.038797597039984,
+    "tre": 7.451875083947129,
+    "determinant": 1.0000001192092896,
+    "seconds": 15.560659078881145,
+    "matrix": [
+      [
+        0.9890576004981995,
+        -0.12942922115325928,
+        -0.07080381363630295,
+        -6.527984619140625
+      ],
+      [
+        0.12614691257476807,
+        0.9907990097999573,
+        -0.04903401434421539,
+        29.474868774414062
+      ],
+      [
+        0.07649878412485123,
+        0.03956577926874161,
+        0.9962843656539917,
+        24.230453491210938
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-public/anatomix/notebooks/AbdomenMRCT/imagesTr/AbdomenMRCT_1022_0001.nii.gz",
+    "shape_xyz": [
+      192,
+      160,
+      192
+    ],
+    "spacing_xyz": [
+      2.0,
+      2.0,
+      2.0
+    ],
+    "known_transform": "affine",
+    "masked": true,
+    "features": "anatomix-dev-vit",
+    "kind": "rigid",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "1",
+    "translation_lr": 0.01,
+    "translation_radius": 180.96316528320312,
+    "iterations_per_level": 100,
+    "initial_tre": 16.038797597039984,
+    "tre": 4.172225441275863,
+    "determinant": 1.0,
+    "seconds": 15.25463764090091,
+    "matrix": [
+      [
+        0.9913709163665771,
+        -0.12217835336923599,
+        -0.04749881103634834,
+        -4.2807769775390625
+      ],
+      [
+        0.11975931376218796,
+        0.9915012121200562,
+        -0.05082409083843231,
+        27.199356079101562
+      ],
+      [
+        0.053304728120565414,
+        0.044697098433971405,
+        0.997577428817749,
+        22.199935913085938
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-public/anatomix/notebooks/AbdomenMRCT/imagesTr/AbdomenMRCT_1022_0001.nii.gz",
+    "shape_xyz": [
+      192,
+      160,
+      192
+    ],
+    "spacing_xyz": [
+      2.0,
+      2.0,
+      2.0
+    ],
+    "known_transform": "affine",
+    "masked": true,
+    "features": "anatomix-dev-vit",
+    "kind": "affine",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "legacy",
+    "translation_lr": null,
+    "translation_radius": 1.0,
+    "iterations_per_level": 100,
+    "initial_tre": 16.038797597039984,
+    "tre": 6.924457355088124,
+    "determinant": 0.9478484988212585,
+    "seconds": 15.079302357975394,
+    "matrix": [
+      [
+        1.0005980730056763,
+        -0.04732292518019676,
+        -0.05305865406990051,
+        4.8729095458984375
+      ],
+      [
+        0.1330851912498474,
+        0.9280951023101807,
+        -0.05745137110352516,
+        23.014572143554688
+      ],
+      [
+        0.04362135007977486,
+        0.0971241220831871,
+        1.00613534450531,
+        24.577621459960938
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-public/anatomix/notebooks/AbdomenMRCT/imagesTr/AbdomenMRCT_1022_0001.nii.gz",
+    "shape_xyz": [
+      192,
+      160,
+      192
+    ],
+    "spacing_xyz": [
+      2.0,
+      2.0,
+      2.0
+    ],
+    "known_transform": "affine",
+    "masked": true,
+    "features": "anatomix-dev-vit",
+    "kind": "affine",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "1",
+    "translation_lr": 0.01,
+    "translation_radius": 180.96316528320312,
+    "iterations_per_level": 100,
+    "initial_tre": 16.038797597039984,
+    "tre": 0.25935871468165866,
+    "determinant": 1.019837737083435,
+    "seconds": 15.066195533145219,
+    "matrix": [
+      [
+        1.0316691398620605,
+        -0.10050009936094284,
+        -0.04528501257300377,
+        6.6866912841796875
+      ],
+      [
+        0.127043217420578,
+        0.9535351991653442,
+        -0.06656838953495026,
+        24.523574829101562
+      ],
+      [
+        0.054109130054712296,
+        0.06950432062149048,
+        1.0163222551345825,
+        22.475555419921875
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  }
+]

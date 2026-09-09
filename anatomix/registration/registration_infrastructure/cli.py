@@ -1,14 +1,4 @@
-"""Argument parsing and validation for ``anatomix-register.py``.
-
-This module defines the full command-line interface and resolves it into the
-inputs the pipeline consumes: a list of fixed/moving (and optional mask/seg)
-pairs, the per-stage registration specs, and the feature/output settings. It
-also holds every preflight check: paths, each mask/segmentation against the
-geometry of its own image, and the stage schedules against the image sizes.
-FireANTs is imported only lazily (inside :func:`main`, after all validation),
-so ``--help`` and every argument/validation error work without the backend
-installed.
-"""
+"""Command-line parsing and input validation; FireANTs is imported only after validation."""
 import argparse
 import os
 
@@ -26,6 +16,9 @@ from .io_utils import (
     read_pairs_csv,
 )
 
+# ITK transform files SimpleITK can read, plus FreeSurfer LTA.
+TRANSFORM_EXTS = (".mat", ".txt", ".tfm", ".h5", ".hdf5", ".lta")
+
 FEATURE_CHOICES = ("anatomix+mindssc", "anatomix", "mindssc", "intensity")
 # Feature families that need the anatomix backbone loaded.
 MODEL_FEATURES = ("anatomix+mindssc", "anatomix")
@@ -33,18 +26,13 @@ TRANSFORM_RANK = {"rigid": 0, "affine": 1, "deformable": 2}
 VALID_LOSSES = {"cc", "mi", "mse", "masked_cc", "masked_mi", "masked_mse"}
 # Losses that consume a CC kernel schedule (auto default resolves to a CC loss).
 CC_LOSSES = {None, "cc", "masked_cc"}
-# FireANTs floors every pyramid level at this many voxels per axis, as
-# ``max(int(size / shrink), MIN_IMG_SIZE)`` (fireants/utils/globals.py).
+# FireANTs floors every pyramid level at this many voxels per axis.
 MIN_IMG_SIZE = 32
-# Tolerance for a mask/segmentation's affine against its image's: below any
-# physically meaningful difference (0.1 um of origin, 6e-3 degrees of
-# direction), above the noise of a header round-tripped through another tool.
+# Header tolerance for a mask/segmentation against its image (mm, direction cosines).
 GEOMETRY_ATOL = 1e-4
 
 
-# --------------------------------------------------------------------------- #
 # Parser
-# --------------------------------------------------------------------------- #
 def build_parser():
     """Construct the ``anatomix-register.py`` argument parser."""
     parser = argparse.ArgumentParser(
@@ -78,7 +66,7 @@ def build_parser():
         "--registration-pairs-csv",
         help="Batch: CSV with a header and columns fixed,moving"
         "[,fixed_mask,moving_mask,fixed_seg,moving_seg"
-        ",fixed_keypoints,moving_keypoints].",
+        ",fixed_keypoints,moving_keypoints,initial_transform].",
     )
 
     aux = parser.add_argument_group("masks, segmentations and keypoints")
@@ -95,6 +83,13 @@ def build_parser():
         "--moving-keypoints",
         help="Corresponding moving-image keypoint CSV (enables TRE).",
     )
+    aux.add_argument(
+        "--initial-transform",
+        help="Linear transform applied before the first stage: an ITK/ANTs "
+        "file (.mat/.txt/.tfm/.h5) mapping fixed to moving physical "
+        "coordinates, or a FreeSurfer .lta (src = moving, dst = fixed, as "
+        "mri_coreg writes it). Cannot be combined with --initialization.",
+    )
     aux.add_argument("--fixed-mask-dir",
                      help="Batch directory of fixed masks.")
     aux.add_argument("--moving-mask-dir",
@@ -106,6 +101,8 @@ def build_parser():
                      help="Batch directory of fixed keypoint CSVs.")
     aux.add_argument("--moving-keypoints-dir",
                      help="Batch directory of moving keypoint CSVs.")
+    aux.add_argument("--initial-transform-dir",
+                     help="Batch directory of initial transforms (.mat/.txt).")
     aux.add_argument(
         "--keypoint-convention", choices=list(KEYPOINT_CONVENTIONS),
         default="lps",
@@ -127,11 +124,12 @@ def build_parser():
         "--transform stage)"
     )
     tf.add_argument(
-        "--initialization", choices=["none", "center-of-mass", "moments"],
+        "--initialization", choices=["none", "image-centers", "center-of-mass", "moments"],
         default="none",
-        help="Closed-form moment initialization run before the stage chain, "
-        "computed from the normalized intensity images (restricted to the "
-        "masks when given), not from the features.",
+        help="Initialization before the stage chain. image-centers aligns geometric "
+        "image centers in physical space, ignoring intensities and masks. "
+        "center-of-mass and moments use normalized intensities, restricted to "
+        "the masks when given. Default: none (physical identity).",
     )
     tf.add_argument(
         "--transform", default="deformable",
@@ -141,12 +139,18 @@ def build_parser():
     tf.add_argument(
         "--loss", default=None,
         help="Per-stage loss from {cc,mi,mse,masked_cc,masked_mi,masked_mse}. "
-        "Default: masked_cc if the pair has masks, else cc.",
+        "Default: masked_cc if either image has a mask, else cc.",
     )
     tf.add_argument(
         "--step-size", default=None,
         help="Per-stage Adam learning rate. Default 1.0 for deformable stages, "
         "0.01 for rigid/affine stages.",
+    )
+    tf.add_argument(
+        "--translation-step-size", default=None,
+        help="Per-stage dimensionless translation learning rate for rigid/affine; "
+        "'na' for deformable. Translation is normalized by the fixed physical "
+        "FOV radius. Default: tied to --step-size.",
     )
     tf.add_argument(
         "--shrink-factors", default=None,
@@ -231,6 +235,13 @@ def build_parser():
         choices=[0, 1], default=1,
         help="1: one composed transform; 0: one cumulative snapshot per stage.",
     )
+    out.add_argument(
+        "--save-inverse", action=argparse.BooleanOptionalAction, default=False,
+        help="Also write the moving-to-fixed transform on the moving grid "
+        "(inverse-warp-*) and the fixed image/segmentation resampled onto the "
+        "moving grid (inverse-moved-*). Dense inverses are numerical; the "
+        "metrics CSV records their worst inverse-consistency residual in mm.",
+    )
 
     misc = parser.add_argument_group("misc")
     misc.add_argument("--seed", type=int, default=12345, help="Random seed.")
@@ -304,9 +315,7 @@ def _add_custom_backbone_args(parser):
     grp.add_argument("--vit-in-eps", type=float, default=1e-2)
 
 
-# --------------------------------------------------------------------------- #
 # Per-stage schedule parsing
-# --------------------------------------------------------------------------- #
 def _axtuple(value):
     return tuple(int(x) for x in value.split("x"))
 
@@ -330,11 +339,7 @@ def _split_stages(value, n, name):
 
 
 def _resolve_step_sizes(value, kinds, n):
-    """Per-stage Adam learning rate.
-
-    The default is stage-aware: 1.0 for deformable stages, and 0.01 for the far
-    more sensitive linear ones, which diverge at a deformable-scale rate.
-    """
+    """Per-stage Adam learning rate: 1.0 for deformable, 0.01 for linear stages."""
     if value is None:
         return [1.0 if kinds[i] == "deformable" else 0.01 for i in range(n)]
     values = [float(p) for p in _split_stages(value, n, "--step-size")]
@@ -344,14 +349,7 @@ def _resolve_step_sizes(value, kinds, n):
 
 
 def _resolve_shrink(value, n):
-    """Per-stage resolution schedule.
-
-    Levels must be *strictly* decreasing: FireANTs rejects a repeated level,
-    but only once the registration object is built, long after the backbone has
-    loaded.
-    """
-    # 6 is the coarsest level the backend actually delivers on the 192x160x192
-    # reference data: anything coarser is clamped back to MIN_IMG_SIZE.
+    """Per-stage resolution schedule; levels must strictly decrease."""
     tokens = ["6x4x2x1"] * n if value is None else _split_stages(
         value, n, "--shrink-factors"
     )
@@ -387,9 +385,7 @@ def _resolve_iterations(value, n, shrinks):
 def _resolve_cc_kernels(value, losses, shrinks, n):
     is_cc = [losses[i] in CC_LOSSES for i in range(n)]
     if value is None:
-        # No schedule requested: leave each stage on FireANTs' own default
-        # kernel size. Good schedules vary by dataset and pyramid.
-        return [None] * n
+        return [None] * n  # FireANTs' default kernel size
     tokens = _split_stages(value, n, "--cc-kernel-widths")
     kernels = []
     for i in range(n):
@@ -478,6 +474,19 @@ def build_stages(args):
                 )
 
     steps = _resolve_step_sizes(args.step_size, kinds, n)
+    translation_steps = list(steps)
+    if args.translation_step_size is not None:
+        tokens = _split_stages(args.translation_step_size, n, "--translation-step-size")
+        for i, (kind, token) in enumerate(zip(kinds, tokens)):
+            if kind == "deformable":
+                if token != "na":
+                    raise ValueError("--translation-step-size: use 'na' for deformable stages.")
+                translation_steps[i] = None
+            else:
+                value = float(token)
+                if not np.isfinite(value) or value <= 0:
+                    raise ValueError("--translation-step-size: linear rates must be finite and positive.")
+                translation_steps[i] = value
     shrinks = _resolve_shrink(args.shrink_factors, n)
     iters = _resolve_iterations(args.iterations, n, shrinks)
     cc_kernels = _resolve_cc_kernels(args.cc_kernel_widths, losses, shrinks, n)
@@ -491,6 +500,7 @@ def build_stages(args):
     return [
         {
             "kind": kinds[i], "loss": losses[i], "step": steps[i],
+            "translation_step": translation_steps[i],
             "shrink": shrinks[i], "iters": iters[i], "cc_kernel": cc_kernels[i],
             "smooth_grad": grad_sigmas[i], "smooth_warp": warp_sigmas[i],
             "tolerance": args.tolerance,
@@ -499,9 +509,7 @@ def build_stages(args):
     ]
 
 
-# --------------------------------------------------------------------------- #
 # Feature / backbone / input resolution
-# --------------------------------------------------------------------------- #
 def parse_sliding_window(args):
     parts = [p.strip() for p in args.sliding_window_params.split(",")]
     if len(parts) != 5:
@@ -536,11 +544,7 @@ def parse_mindssc(args):
 
 
 def reject_custom_backbone_flags(args, because):
-    """Reject ``--custom-*`` flags that cannot take effect.
-
-    They would otherwise be ignored and the run would quietly complete against
-    something other than the requested weights.
-    """
+    """Reject ``--custom-*`` flags that would silently be ignored."""
     foreign = [
         flag for flag, value in (
             ("--custom-arch", args.custom_arch),
@@ -620,13 +624,10 @@ def _abspath(value):
 def _single_pair(args):
     columns = ["fixed", "moving"]
     pair = {"fixed": _abspath(args.fixed), "moving": _abspath(args.moving)}
-    if bool(args.fixed_mask) != bool(args.moving_mask):
-        raise ValueError(
-            "Provide both --fixed-mask and --moving-mask, or neither.")
-    if args.fixed_mask:
-        pair["fixed_mask"] = _abspath(args.fixed_mask)
-        pair["moving_mask"] = _abspath(args.moving_mask)
-        columns += ["fixed_mask", "moving_mask"]
+    for col in ("fixed_mask", "moving_mask"):
+        if getattr(args, col):
+            pair[col] = _abspath(getattr(args, col))
+            columns.append(col)
     if args.fixed_seg and not args.moving_seg:
         raise ValueError("--fixed-seg requires --moving-seg.")
     if args.moving_seg:
@@ -645,6 +646,9 @@ def _single_pair(args):
         if args.moving_keypoints:
             pair["moving_keypoints"] = _abspath(args.moving_keypoints)
             columns.append("moving_keypoints")
+    if args.initial_transform:
+        pair["initial_transform"] = _abspath(args.initial_transform)
+        columns.append("initial_transform")
     return [pair], columns
 
 
@@ -659,20 +663,17 @@ def _dir_pairs(args):
     columns = ["fixed", "moving"]
     data = {"fixed": fixed, "moving": moving}
 
-    if bool(args.fixed_mask_dir) != bool(args.moving_mask_dir):
-        raise ValueError(
-            "Provide both --fixed-mask-dir and --moving-mask-dir, or neither."
-        )
-    if args.fixed_mask_dir:
-        for role, directory, col in [
-            ("--fixed-mask-dir", args.fixed_mask_dir, "fixed_mask"),
-            ("--moving-mask-dir", args.moving_mask_dir, "moving_mask"),
-        ]:
-            files = _list_nifti(directory, role)
-            if len(files) != len(fixed):
-                raise ValueError(f"{role}: count must match the image count.")
-            data[col] = files
-            columns.append(col)
+    for role, directory, col in [
+        ("--fixed-mask-dir", args.fixed_mask_dir, "fixed_mask"),
+        ("--moving-mask-dir", args.moving_mask_dir, "moving_mask"),
+    ]:
+        if directory is None:
+            continue
+        files = _list_nifti(directory, role)
+        if len(files) != len(fixed):
+            raise ValueError(f"{role}: count must match the image count.")
+        data[col] = files
+        columns.append(col)
 
     if args.fixed_seg_dir and not args.moving_seg_dir:
         raise ValueError("--fixed-seg-dir requires --moving-seg-dir.")
@@ -707,6 +708,17 @@ def _dir_pairs(args):
             data[col] = files
             columns.append(col)
 
+    if args.initial_transform_dir:
+        files = _list_dir(
+            args.initial_transform_dir, "--initial-transform-dir",
+            TRANSFORM_EXTS, "transform",
+        )
+        if len(files) != len(fixed):
+            raise ValueError(
+                "--initial-transform-dir: count must match the image count.")
+        data["initial_transform"] = files
+        columns.append("initial_transform")
+
     pairs = [
         {col: data[col][i] for col in columns} for i in range(len(fixed))
     ]
@@ -715,20 +727,16 @@ def _dir_pairs(args):
 
 _SINGLE_AUX = (
     "fixed_mask", "moving_mask", "fixed_seg", "moving_seg",
-    "fixed_keypoints", "moving_keypoints",
+    "fixed_keypoints", "moving_keypoints", "initial_transform",
 )
 _DIR_AUX = (
     "fixed_mask_dir", "moving_mask_dir", "fixed_seg_dir", "moving_seg_dir",
-    "fixed_keypoints_dir", "moving_keypoints_dir",
+    "fixed_keypoints_dir", "moving_keypoints_dir", "initial_transform_dir",
 )
 
 
 def _reject_foreign_aux_flags(args, keep):
-    """Error if aux flags belonging to a different input mode are set.
-
-    ``keep`` is the tuple of aux flag names valid for the active mode; any other
-    aux flag that is set is a silent no-op and therefore rejected.
-    """
+    """Reject auxiliary flags that belong to a different input mode."""
     foreign = [f for f in _SINGLE_AUX + _DIR_AUX
                if f not in keep and getattr(args, f)]
     if foreign:
@@ -764,8 +772,6 @@ def resolve_inputs(args):
         return _dir_pairs(args)
     _reject_foreign_aux_flags(args, ())
     columns, rows = read_pairs_csv(args.registration_pairs_csv)
-    # A passthrough column named after a metric would be overwritten by it and
-    # duplicated in the metrics-CSV header.
     reserved = [col for col in columns if col in METRIC_COLUMNS]
     if reserved:
         raise ValueError(
@@ -777,11 +783,7 @@ def resolve_inputs(args):
 
 
 def _volume_geometry(path, role):
-    """Validate one volume path and return its ``(spatial_shape, affine)``.
-
-    Header-only (nibabel loads lazily), so preflight stays cheap even for a
-    large batch and needs neither the GPU nor the FireANTs backend.
-    """
+    """Validate one volume path and return its ``(spatial_shape, affine)`` from the header."""
     if not os.path.isfile(path):
         raise ValueError(f"{role}: file not found: {path}")
     if not path.endswith(NIFTI_EXTS):
@@ -799,15 +801,7 @@ def _volume_geometry(path, role):
 
 
 def validate_volumes(pairs):
-    """Validate every volume path and collect the geometries.
-
-    Returns
-    -------
-    list of dict
-        One dict per pair, mapping each present volume column to its
-        ``(spatial_shape, affine)``; consumed by :func:`validate_geometry` and
-        :func:`validate_pyramid`.
-    """
+    """Validate NIfTI headers and return per-pair (shape, affine) geometry dictionaries."""
     geometries = []
     for index, pair in enumerate(pairs):
         geometry = {}
@@ -820,11 +814,7 @@ def validate_volumes(pairs):
 
 
 def validate_keypoints(pairs):
-    """Validate every keypoint CSV and check the fixed/moving counts match.
-
-    Keypoints are absent from :func:`validate_volumes` and
-    :func:`validate_geometry` on purpose: they carry no voxel grid to check.
-    """
+    """Validate finite CSV coordinates and equal fixed/moving landmark counts."""
     for index, pair in enumerate(pairs):
         counts = {}
         for col in KEYPOINT_COLUMNS:
@@ -847,6 +837,32 @@ def validate_keypoints(pairs):
             )
 
 
+def validate_initial_transforms(pairs, geometries, initialization):
+    """Require readable linear transform files, and no competing initialization."""
+    for index, pair in enumerate(pairs):
+        path = pair.get("initial_transform")
+        if path is None:
+            continue
+        geometry = geometries[index]
+        role = f"pair {index} [initial_transform]"
+        if initialization != "none":
+            raise ValueError(
+                f"{role}: cannot be combined with --initialization "
+                f"{initialization}; use one or the other."
+            )
+        if not os.path.isfile(path):
+            raise ValueError(f"{role}: file not found: {path}")
+        if not path.endswith(TRANSFORM_EXTS):
+            raise ValueError(
+                f"{role}: expected one of {TRANSFORM_EXTS}: {path}")
+        from .warp_io import read_linear_transform
+
+        try:
+            read_linear_transform(path, geometry.get("fixed"), geometry.get("moving"))
+        except (RuntimeError, ValueError) as exc:
+            raise ValueError(f"{role}: {exc}") from None
+
+
 # Each auxiliary volume is consumed on the grid of exactly one image.
 # Keypoints are excluded on purpose (see validate_keypoints).
 _AUX_IMAGE = {
@@ -856,14 +872,7 @@ _AUX_IMAGE = {
 
 
 def validate_geometry(geometries):
-    """Check that every mask/segmentation sits on the grid of its own image.
-
-    Masks and segmentations are consumed voxelwise and never resampled: a mask
-    gates the feature volume, and a segmentation is warped by a grid expressed
-    in *its image's* normalized coordinates. A differing grid is therefore
-    reinterpreted rather than resampled, putting the labels at the wrong
-    physical locations.
-    """
+    """Require each mask/segmentation to match its own image's shape and affine."""
     for index, geometry in enumerate(geometries):
         for aux, image in _AUX_IMAGE.items():
             if aux not in geometry or image not in geometry:
@@ -897,15 +906,8 @@ def _check_stage_size(role, shape, index, stage_index, stage):
     schedule = "x".join(str(s) for s in stage["shrink"])
 
     if any(s > 1 for s in stage["shrink"]):
-        # Levels with shrink > 1 are resampled by an FFT crop, which needs one
-        # voxel of margin on each side of the floored target size. Below that
-        # the backend raises an opaque error, or silently truncates the axis to
-        # a handful of voxels and registers that. Pyramid depth is irrelevant:
-        # every level below the floor becomes the floor.
+        # Downsampled levels need two voxels of margin over the 32-voxel floor.
         if smallest < MIN_IMG_SIZE + 2:
-            # Dropping to one resolution rescues the stage unless it is
-            # deformable and below the floor, where the warp field is the
-            # problem (the branch below) and only more voxels can help.
             single_res_works = (
                 stage["kind"] != "deformable" or smallest >= MIN_IMG_SIZE
             )
@@ -921,8 +923,7 @@ def _check_stage_size(role, shape, index, stage_index, stage):
                 f"{MIN_IMG_SIZE + 2}. {hint}"
             )
     elif stage["kind"] == "deformable":
-        # Nothing is resampled at shrink 1, but the warp field is still
-        # allocated at max(size, MIN_IMG_SIZE) and then mismatches the image.
+        # The warp field is allocated at no fewer than MIN_IMG_SIZE voxels per axis.
         if smallest < MIN_IMG_SIZE:
             raise ValueError(
                 f"pair {index} [{role}]: {where}, but stage {stage_index} "
@@ -947,13 +948,7 @@ def _check_stage_size(role, shape, index, stage_index, stage):
 
 
 def validate_pyramid(geometries, stages):
-    """Check every image size against every stage's pyramid and CC kernel.
-
-    FireANTs resamples each level to ``max(int(size / shrink), MIN_IMG_SIZE)``
-    per axis, so an axis at or below the floor is replaced rather than
-    downsampled. Both images of a pair are checked: they are floored
-    independently and need not be the same size.
-    """
+    """Check image sizes against FireANTs' 32-voxel pyramid floor and CC kernels."""
     for index, geometry in enumerate(geometries):
         for role in ("fixed", "moving"):
             shape = geometry[role][0]
@@ -962,13 +957,7 @@ def validate_pyramid(geometries, stages):
 
 
 def validate_pairs(pairs, stages):
-    """Per-pair checks that must run before the backbone loads.
-
-    A missing required ``fixed``/``moving`` path, a lone mask, a fixed
-    segmentation without a moving one, moving keypoints without fixed ones, or
-    an explicit masked loss on a pair with no masks -- each would otherwise
-    surface mid-batch.
-    """
+    """Validate required paths and compatible mask, label and landmark pairs."""
     explicit_masked = any(
         s["loss"] is not None and s["loss"].startswith("masked_") for s in stages
     )
@@ -979,10 +968,6 @@ def validate_pairs(pairs, stages):
             raise ValueError(f"pair {index}: missing required 'moving' path.")
         has_fixed_mask = pair.get("fixed_mask") is not None
         has_moving_mask = pair.get("moving_mask") is not None
-        if has_fixed_mask != has_moving_mask:
-            raise ValueError(
-                f"pair {index}: provide both fixed and moving masks, or neither."
-            )
         if pair.get("fixed_seg") is not None and pair.get("moving_seg") is None:
             raise ValueError(
                 f"pair {index}: a fixed segmentation requires a moving one."
@@ -993,7 +978,7 @@ def validate_pairs(pairs, stages):
                 f"pair {index}: moving keypoints require fixed keypoints (the "
                 "transform maps fixed points into moving space)."
             )
-        if explicit_masked and not (has_fixed_mask and has_moving_mask):
+        if explicit_masked and not (has_fixed_mask or has_moving_mask):
             raise ValueError(
                 f"pair {index}: a masked loss was requested but the pair has no "
                 "masks."
@@ -1011,44 +996,46 @@ def validate_device(spec):
     )
 
 
-# --------------------------------------------------------------------------- #
-# Entry point
-# --------------------------------------------------------------------------- #
+def prepare(args):
+    """Validate parsed arguments; return (pairs, input_columns, stages).
+
+    Raises ValueError with a message meant for the user. Only headers are
+    read, so this needs neither a GPU nor the FireANTs backend."""
+    parse_sliding_window(args)
+    parse_mindssc(args)
+    if args.features in MODEL_FEATURES:
+        if args.backbone == "anatomix-dev-vit" and args.sw_window != 128:
+            raise ValueError(
+                "anatomix-dev-vit requires a 128-voxel sliding window "
+                "(--sliding-window-params window=128)."
+            )
+        build_custom_kwargs(args)
+    else:
+        reject_custom_backbone_flags(
+            args, f"--features {args.features} loads no backbone")
+        args.unet_kwargs = args.vit_kwargs = None
+    stages = build_stages(args)
+    validate_device(args.device)
+    pairs, input_columns = resolve_inputs(args)
+    geometries = validate_volumes(pairs)
+    validate_pairs(pairs, stages)
+    validate_keypoints(pairs)
+    validate_geometry(geometries)
+    validate_pyramid(geometries, stages)
+    validate_initial_transforms(pairs, geometries, args.initialization)
+    args.output_dir = os.path.abspath(args.output_dir)
+    return pairs, input_columns, stages
+
+
 def main(argv=None):
     """Parse arguments, validate, and run the registration pipeline."""
     parser = build_parser()
     args = parser.parse_args(argv)
-
     try:
-        parse_sliding_window(args)
-        parse_mindssc(args)
-        # The backbone settings are inert unless a network is actually loaded.
-        if args.features in MODEL_FEATURES:
-            if args.backbone == "anatomix-dev-vit" and args.sw_window != 128:
-                raise ValueError(
-                    "anatomix-dev-vit requires a 128-voxel sliding window "
-                    "(--sliding-window-params window=128)."
-                )
-            build_custom_kwargs(args)
-        else:
-            reject_custom_backbone_flags(
-                args, f"--features {args.features} loads no backbone")
-            args.unet_kwargs = args.vit_kwargs = None
-        stages = build_stages(args)
-        validate_device(args.device)
-        pairs, input_columns = resolve_inputs(args)
-        geometries = validate_volumes(pairs)
-        validate_pairs(pairs, stages)
-        validate_keypoints(pairs)
-        validate_geometry(geometries)
-        validate_pyramid(geometries, stages)
+        pairs, input_columns, stages = prepare(args)
     except ValueError as error:
         parser.error(str(error))
-
-    args.output_dir = os.path.abspath(args.output_dir)
-
-    # Import here so --help and validation work without the FireANTs backend.
-    from .pipeline import run
+    from .pipeline import run  # deferred: --help and validation need no backend
 
     run(args, pairs, input_columns, stages)
 

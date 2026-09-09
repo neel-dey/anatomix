@@ -1,42 +1,52 @@
 #!/usr/bin/env python
-"""anatomix-register.py -- FireANTs registration on anatomix features.
+"""Register 3D volume pairs with FireANTs on anatomix features.
 
-Register arbitrary 3D volume pairs by extracting anatomix network features
-(and/or MIND-SSC descriptors, and/or the raw intensities) and optimizing them
-with FireANTs. Supports rigid/affine/deformable stages, masked and unmasked
-losses, optional label warping, optional keypoint warping with
-target-registration error, transform export (ants/scipy/pytorch), Dice, and
-fold counting, in single-pair and batch modes.
+    bash registration_backend/install_fireants.sh      # once
+    python anatomix-register.py --fixed F.nii.gz --moving M.nii.gz --output-dir out
+    python anatomix-register.py --help
 
-Install the backend once with::
+What a run does, and where each step lives:
 
-    bash registration_backend/install_fireants.sh
+1. ``cli.build_parser`` / ``cli.prepare``: parse the options, validate every
+   input header, transform file and per-stage schedule before anything is
+   loaded. Options come in groups: inputs (pair, CSV or directories, plus
+   masks, segmentations, landmarks and an initial transform), intensity
+   clipping, the stage chain (``--transform``, ``--initialization``,
+   ``--loss``, ``--step-size``, ``--shrink-factors``, ``--iterations``,
+   ``--cc-kernel-widths``, smoothing), features (``--features``,
+   ``--backbone``, sliding-window and MIND-SSC settings), outputs
+   (``--output-dir``, transform convention, snapshots, inverse) and device.
+2. ``features``: intensity normalization, anatomix network features
+   (MONAI sliding windows), MIND-SSC descriptors, mask channel.
+3. ``register.run_registration``: the initial linear transform, then one
+   FireANTs stage per ``--transform`` entry. Every stage resamples the
+   original moving image onto the fixed grid with the transform so far,
+   extracts its features there and fits a residual, so fixed and moving
+   images may have different grids.
+4. ``warp_io`` / ``metrics``: resample the moving image and labels once,
+   map landmarks, export the transform (ANTs, SciPy or PyTorch convention)
+   and its inverse, and write Dice, fold count and landmark error to
+   ``metrics.csv``.
 
-Reproduce the SOTA Learn2Reg AbdomenMRCT result (≈0.879 mean macro-Dice, ~0
-folds) with a single deformable ``masked_cc`` stage. The ``21x13x11x9`` CC
-kernel schedule is tuned for this dataset and must be passed explicitly (omit it
-and each stage falls back to FireANTs' own default kernel, which does not reach
-zero folds)::
-
-    python anatomix-register.py \\
-        --fixed CT.nii.gz --moving MR.nii.gz \\
-        --fixed-mask CT_mask.nii.gz --moving-mask MR_mask.nii.gz \\
-        --moving-seg MR_seg.nii.gz --fixed-seg CT_seg.nii.gz \\
-        --backbone anatomix-dev-vit --step-size 1.0 \\
-        --cc-kernel-widths 21x13x11x9 \\
-        --fixed-minclip -450 --fixed-maxclip 450 \\
-        --moving-minclip 0 --moving-maxclip 20000
-
-Run ``python anatomix-register.py --help`` for the full interface.
-
-Reproducing the ICLR'25 ConvexAdam results
-------------------------------------------
-The ConvexAdam backend that produced the anatomix ICLR'25 registration numbers
-lives under ``registration_backend/convexadam/`` and is demonstrated in
-``tutorials/anatomix_registration_convexadam.ipynb``. It is not exposed by this
-CLI; use that backend and notebook directly.
+The README in this directory documents the options, recipes and output
+conventions; ``tests/README.md`` holds the measured results. The ConvexAdam
+backend of the ICLR'25 paper is kept under ``registration_backend/convexadam/``
+and is not used here.
 """
-from anatomix.registration.registration_infrastructure.cli import main
+from anatomix.registration.registration_infrastructure.cli import build_parser, prepare
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        pairs, input_columns, stages = prepare(args)
+    except ValueError as error:
+        parser.error(str(error))
+    from anatomix.registration.registration_infrastructure.pipeline import run
+
+    run(args, pairs, input_columns, stages)
+
 
 if __name__ == "__main__":
     main()

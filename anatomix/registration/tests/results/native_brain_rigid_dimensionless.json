@@ -1,0 +1,1298 @@
+[
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "intensity",
+    "kind": "rigid",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "legacy",
+    "translation_lr": null,
+    "translation_radius": 1.0,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 8.003715104604032,
+    "determinant": 1.0,
+    "seconds": 3.265115933958441,
+    "matrix": [
+      [
+        0.9984281659126282,
+        -0.056039176881313324,
+        0.0009147331584244967,
+        -3.7798004150390625
+      ],
+      [
+        0.055791616439819336,
+        0.9921974539756775,
+        -0.11149649322032928,
+        -1.9887161254882812
+      ],
+      [
+        0.005340576171875,
+        0.11137227714061737,
+        0.9937644004821777,
+        15.547115325927734
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "intensity",
+    "kind": "rigid",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "0.5",
+    "translation_lr": 0.005,
+    "translation_radius": 107.22173309326172,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 0.010446124761108752,
+    "determinant": 1.0,
+    "seconds": 2.4476805329322815,
+    "matrix": [
+      [
+        0.9911905527114868,
+        -0.12514950335025787,
+        -0.043346479535102844,
+        -2.5704727172851562
+      ],
+      [
+        0.12166155874729156,
+        0.9896996021270752,
+        -0.07545308023691177,
+        -14.957305908203125
+      ],
+      [
+        0.05234290659427643,
+        0.06951477378606796,
+        0.9962067604064941,
+        6.3487548828125
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "intensity",
+    "kind": "rigid",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "1",
+    "translation_lr": 0.01,
+    "translation_radius": 107.22173309326172,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 0.00891110926647237,
+    "determinant": 0.9999999403953552,
+    "seconds": 2.5294157930184156,
+    "matrix": [
+      [
+        0.9911861419677734,
+        -0.12521249055862427,
+        -0.04326437786221504,
+        -2.5832290649414062
+      ],
+      [
+        0.12172713130712509,
+        0.9896870851516724,
+        -0.07551112771034241,
+        -14.961891174316406
+      ],
+      [
+        0.052273135632276535,
+        0.06957913935184479,
+        0.9962059259414673,
+        6.363761901855469
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "intensity",
+    "kind": "rigid",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "2",
+    "translation_lr": 0.02,
+    "translation_radius": 107.22173309326172,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 0.01563764448925781,
+    "determinant": 1.0,
+    "seconds": 2.477896966971457,
+    "matrix": [
+      [
+        0.9912081360816956,
+        -0.12504014372825623,
+        -0.043259747326374054,
+        -2.5638198852539062
+      ],
+      [
+        0.1215577945113182,
+        0.9897114634513855,
+        -0.07546477019786835,
+        -14.955467224121094
+      ],
+      [
+        0.05225079506635666,
+        0.06954273581504822,
+        0.9962096214294434,
+        6.355323791503906
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "intensity",
+    "kind": "affine",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "legacy",
+    "translation_lr": null,
+    "translation_radius": 1.0,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 7.387932785675326,
+    "determinant": 0.968129575252533,
+    "seconds": 2.1976745061110705,
+    "matrix": [
+      [
+        1.0009719133377075,
+        -0.03769681602716446,
+        -0.012269120663404465,
+        -1.1961822509765625
+      ],
+      [
+        0.11695871502161026,
+        0.9531703591346741,
+        -0.09003975987434387,
+        -15.357772827148438
+      ],
+      [
+        0.05599673092365265,
+        0.10183525830507278,
+        0.999735951423645,
+        7.4523773193359375
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "intensity",
+    "kind": "affine",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "0.5",
+    "translation_lr": 0.005,
+    "translation_radius": 107.22173309326172,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 0.06712779127739942,
+    "determinant": 0.9970413446426392,
+    "seconds": 2.1768370440695435,
+    "matrix": [
+      [
+        0.9900175333023071,
+        -0.12498912960290909,
+        -0.04316122084856033,
+        -2.4267654418945312
+      ],
+      [
+        0.1216840147972107,
+        0.989027202129364,
+        -0.07581504434347153,
+        -14.997932434082031
+      ],
+      [
+        0.052301011979579926,
+        0.06934091448783875,
+        0.9950815439224243,
+        6.4148101806640625
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "intensity",
+    "kind": "affine",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "1",
+    "translation_lr": 0.01,
+    "translation_radius": 107.22173309326172,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 0.0648657272939384,
+    "determinant": 0.9970678091049194,
+    "seconds": 2.2318972798530012,
+    "matrix": [
+      [
+        0.9900471568107605,
+        -0.12499599903821945,
+        -0.043093737214803696,
+        -2.4350128173828125
+      ],
+      [
+        0.12175784260034561,
+        0.9890042543411255,
+        -0.0757826492190361,
+        -15.013992309570312
+      ],
+      [
+        0.05233320966362953,
+        0.06935052573680878,
+        0.9950945973396301,
+        6.412384033203125
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "intensity",
+    "kind": "affine",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "2",
+    "translation_lr": 0.02,
+    "translation_radius": 107.22173309326172,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 0.06455144388884719,
+    "determinant": 0.9970631003379822,
+    "seconds": 2.2219240891281515,
+    "matrix": [
+      [
+        0.9900179505348206,
+        -0.12499360740184784,
+        -0.04308699443936348,
+        -2.4280242919921875
+      ],
+      [
+        0.12167131155729294,
+        0.989030659198761,
+        -0.0757409855723381,
+        -15.006011962890625
+      ],
+      [
+        0.052406925708055496,
+        0.06933362782001495,
+        0.9951043725013733,
+        6.3978118896484375
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "anatomix-dev",
+    "kind": "rigid",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "legacy",
+    "translation_lr": null,
+    "translation_radius": 1.0,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 9.562249786161757,
+    "determinant": 1.0,
+    "seconds": 23.606143241981044,
+    "matrix": [
+      [
+        0.9926527738571167,
+        -0.09488776326179504,
+        0.07507841289043427,
+        -14.415939331054688
+      ],
+      [
+        0.1048547774553299,
+        0.9842374920845032,
+        -0.1424150913953781,
+        -5.486114501953125
+      ],
+      [
+        -0.06038154289126396,
+        0.14924107491970062,
+        0.9869555234909058,
+        27.89523696899414
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "anatomix-dev",
+    "kind": "rigid",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "0.5",
+    "translation_lr": 0.005,
+    "translation_radius": 107.22173309326172,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 0.01707870007097598,
+    "determinant": 1.0,
+    "seconds": 23.01880961097777,
+    "matrix": [
+      [
+        0.9911718368530273,
+        -0.12529605627059937,
+        -0.04335063695907593,
+        -2.5899581909179688
+      ],
+      [
+        0.12180957943201065,
+        0.9896842837333679,
+        -0.07541550695896149,
+        -14.972320556640625
+      ],
+      [
+        0.05235271155834198,
+        0.06946919858455658,
+        0.996209442615509,
+        6.340965270996094
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "anatomix-dev",
+    "kind": "rigid",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "1",
+    "translation_lr": 0.01,
+    "translation_radius": 107.22173309326172,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 0.02035295269977692,
+    "determinant": 1.0,
+    "seconds": 23.06006409507245,
+    "matrix": [
+      [
+        0.9911885261535645,
+        -0.1251807063817978,
+        -0.043302688747644424,
+        -2.5871734619140625
+      ],
+      [
+        0.1216939389705658,
+        0.9896929860115051,
+        -0.07548781484365463,
+        -14.950233459472656
+      ],
+      [
+        0.05230598524212837,
+        0.06955298036336899,
+        0.9962060451507568,
+        6.357063293457031
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "anatomix-dev",
+    "kind": "rigid",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "2",
+    "translation_lr": 0.02,
+    "translation_radius": 107.22173309326172,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 0.029146090147151426,
+    "determinant": 0.9999999403953552,
+    "seconds": 23.177007417893037,
+    "matrix": [
+      [
+        0.991188645362854,
+        -0.1251915991306305,
+        -0.043267663568258286,
+        -2.5696868896484375
+      ],
+      [
+        0.12170718610286713,
+        0.9896911978721619,
+        -0.0754893347620964,
+        -14.945571899414062
+      ],
+      [
+        0.0522722564637661,
+        0.06955818086862564,
+        0.9962074160575867,
+        6.378814697265625
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "anatomix-dev",
+    "kind": "affine",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "legacy",
+    "translation_lr": null,
+    "translation_radius": 1.0,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 37.56967477569078,
+    "determinant": 0.0818953588604927,
+    "seconds": 22.822494403924793,
+    "matrix": [
+      [
+        0.24974098801612854,
+        -0.025550317019224167,
+        -0.07473228871822357,
+        94.00272369384766
+      ],
+      [
+        0.03497180715203285,
+        0.5524407029151917,
+        -0.07969554513692856,
+        -53.29371643066406
+      ],
+      [
+        -0.029910994693636894,
+        0.018448442220687866,
+        0.5968011021614075,
+        38.2104377746582
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "anatomix-dev",
+    "kind": "affine",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "0.5",
+    "translation_lr": 0.005,
+    "translation_radius": 107.22173309326172,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 0.13459217879135027,
+    "determinant": 1.005652666091919,
+    "seconds": 22.928193002939224,
+    "matrix": [
+      [
+        0.9935877323150635,
+        -0.12556886672973633,
+        -0.04347105696797371,
+        -2.888946533203125
+      ],
+      [
+        0.12193766981363297,
+        0.9907464981079102,
+        -0.07504360377788544,
+        -14.937850952148438
+      ],
+      [
+        0.05244499817490578,
+        0.06995107233524323,
+        0.9983491897583008,
+        6.214836120605469
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "anatomix-dev",
+    "kind": "affine",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "1",
+    "translation_lr": 0.01,
+    "translation_radius": 107.22173309326172,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 0.1341438882205209,
+    "determinant": 1.0057110786437988,
+    "seconds": 22.89463403308764,
+    "matrix": [
+      [
+        0.9935877323150635,
+        -0.12559567391872406,
+        -0.0434432215988636,
+        -2.896942138671875
+      ],
+      [
+        0.1219295784831047,
+        0.9907765984535217,
+        -0.07505545765161514,
+        -14.929985046386719
+      ],
+      [
+        0.05243334546685219,
+        0.06993186473846436,
+        0.9983775019645691,
+        6.2149658203125
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "anatomix-dev",
+    "kind": "affine",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "2",
+    "translation_lr": 0.02,
+    "translation_radius": 107.22173309326172,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 0.13230245840330132,
+    "determinant": 1.0055336952209473,
+    "seconds": 22.92676961189136,
+    "matrix": [
+      [
+        0.9935722351074219,
+        -0.12547138333320618,
+        -0.04348791390657425,
+        -2.8595123291015625
+      ],
+      [
+        0.12208867818117142,
+        0.9907631874084473,
+        -0.07513593137264252,
+        -14.945632934570312
+      ],
+      [
+        0.05242273211479187,
+        0.06988035142421722,
+        0.9982210993766785,
+        6.2227020263671875
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "anatomix-dev-vit",
+    "kind": "rigid",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "legacy",
+    "translation_lr": null,
+    "translation_radius": 1.0,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 8.554796582924466,
+    "determinant": 1.0,
+    "seconds": 23.233260554959998,
+    "matrix": [
+      [
+        0.9987915754318237,
+        -0.04908560961484909,
+        -0.002452643821015954,
+        -2.9709396362304688
+      ],
+      [
+        0.04846964031457901,
+        0.9920575022697449,
+        -0.11607145518064499,
+        -0.47487640380859375
+      ],
+      [
+        0.008130602538585663,
+        0.11581230908632278,
+        0.9932378530502319,
+        15.608139038085938
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "anatomix-dev-vit",
+    "kind": "rigid",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "0.5",
+    "translation_lr": 0.005,
+    "translation_radius": 107.22173309326172,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 0.03400232660525702,
+    "determinant": 1.0,
+    "seconds": 23.049832694930956,
+    "matrix": [
+      [
+        0.9911505579948425,
+        -0.1254875808954239,
+        -0.04328353330492973,
+        -2.5975570678710938
+      ],
+      [
+        0.12200039625167847,
+        0.9896533489227295,
+        -0.0755123719573021,
+        -14.997413635253906
+      ],
+      [
+        0.05231155827641487,
+        0.06956351548433304,
+        0.9962050318717957,
+        6.379966735839844
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "anatomix-dev-vit",
+    "kind": "rigid",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "1",
+    "translation_lr": 0.01,
+    "translation_radius": 107.22173309326172,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 0.0362940059667511,
+    "determinant": 1.0,
+    "seconds": 23.026013080962002,
+    "matrix": [
+      [
+        0.9911551475524902,
+        -0.12548813223838806,
+        -0.0431768074631691,
+        -2.6091156005859375
+      ],
+      [
+        0.12200804799795151,
+        0.9896519184112549,
+        -0.075518898665905,
+        -14.998641967773438
+      ],
+      [
+        0.05220673233270645,
+        0.06958302110433578,
+        0.9962091445922852,
+        6.397285461425781
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "anatomix-dev-vit",
+    "kind": "rigid",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "2",
+    "translation_lr": 0.02,
+    "translation_radius": 107.22173309326172,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 0.04212189477233838,
+    "determinant": 1.0,
+    "seconds": 23.026059835916385,
+    "matrix": [
+      [
+        0.9911514520645142,
+        -0.1254805028438568,
+        -0.04328330606222153,
+        -2.5881118774414062
+      ],
+      [
+        0.12199434638023376,
+        0.9896555542945862,
+        -0.07549326121807098,
+        -14.997642517089844
+      ],
+      [
+        0.052308499813079834,
+        0.06954494118690491,
+        0.9962064623832703,
+        6.384490966796875
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "anatomix-dev-vit",
+    "kind": "affine",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "legacy",
+    "translation_lr": null,
+    "translation_radius": 1.0,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 7.812730171733537,
+    "determinant": 0.9737801551818848,
+    "seconds": 22.865867061074823,
+    "matrix": [
+      [
+        1.0015215873718262,
+        -0.0351175032556057,
+        -0.0075445459224283695,
+        -1.53564453125
+      ],
+      [
+        0.11553498357534409,
+        0.9516720175743103,
+        -0.09457797557115555,
+        -14.825973510742188
+      ],
+      [
+        0.0570509135723114,
+        0.10563701391220093,
+        1.0063620805740356,
+        7.1520843505859375
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "anatomix-dev-vit",
+    "kind": "affine",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "0.5",
+    "translation_lr": 0.005,
+    "translation_radius": 107.22173309326172,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 0.22107977522791178,
+    "determinant": 1.009868860244751,
+    "seconds": 22.949560184031725,
+    "matrix": [
+      [
+        0.9942356944084167,
+        -0.12600454688072205,
+        -0.04389042779803276,
+        -2.9657669067382812
+      ],
+      [
+        0.1218935176730156,
+        0.9920284748077393,
+        -0.07425208389759064,
+        -14.870079040527344
+      ],
+      [
+        0.05197436362504959,
+        0.07071258872747421,
+        1.0006073713302612,
+        6.205665588378906
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "anatomix-dev-vit",
+    "kind": "affine",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "1",
+    "translation_lr": 0.01,
+    "translation_radius": 107.22173309326172,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 0.22229578846659537,
+    "determinant": 1.0099395513534546,
+    "seconds": 22.88916750694625,
+    "matrix": [
+      [
+        0.9942818880081177,
+        -0.12600283324718475,
+        -0.043878596276044846,
+        -2.970916748046875
+      ],
+      [
+        0.12189816683530807,
+        0.992054283618927,
+        -0.0742504745721817,
+        -14.86669921875
+      ],
+      [
+        0.051971185952425,
+        0.07073190808296204,
+        1.0006053447723389,
+        6.2068634033203125
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  },
+  {
+    "source": "/autofs/cluster/dalcalab2/users/nd480/amix-main-paper/datasets/registration/BraTSReg/BraTSReg_Training_Data_v2/BraTSReg_001/BraTSReg_001_00_0000_t1.nii.gz",
+    "shape_xyz": [
+      240,
+      240,
+      155
+    ],
+    "spacing_xyz": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "known_transform": "rigid",
+    "masked": true,
+    "features": "anatomix-dev-vit",
+    "kind": "affine",
+    "loss": "cc",
+    "cc_kernel": "9x7x5",
+    "step_size": 0.01,
+    "translation_multiplier": "2",
+    "translation_lr": 0.02,
+    "translation_radius": 107.22173309326172,
+    "iterations_per_level": 100,
+    "initial_tre": 13.78256341451246,
+    "tre": 0.22209201256524383,
+    "determinant": 1.009921669960022,
+    "seconds": 22.995129266986623,
+    "matrix": [
+      [
+        0.9942694902420044,
+        -0.12599685788154602,
+        -0.043920837342739105,
+        -2.964935302734375
+      ],
+      [
+        0.12190708518028259,
+        0.9920454025268555,
+        -0.07425915449857712,
+        -14.869598388671875
+      ],
+      [
+        0.051962051540613174,
+        0.0706939622759819,
+        1.0006089210510254,
+        6.203086853027344
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  }
+]

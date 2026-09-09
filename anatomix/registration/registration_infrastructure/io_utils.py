@@ -1,9 +1,6 @@
-"""FireANTs-free filesystem helpers (CSV pairs, keypoints, NIfTI naming).
-
-These live apart from :mod:`warp_io` so the CLI can parse arguments, read the
-pairs CSV, and validate inputs without importing the optional FireANTs backend.
-"""
+"""Read pair and landmark CSVs without importing FireANTs."""
 import csv
+import math
 import os
 
 NIFTI_EXTS = (".nii", ".nii.gz")
@@ -15,13 +12,16 @@ VOLUME_COLUMNS = (
 # Columns that hold keypoint CSVs; separate from VOLUME_COLUMNS because they
 # carry no voxel grid to validate against.
 KEYPOINT_COLUMNS = ("fixed_keypoints", "moving_keypoints")
+# Optional ITK/ANTs linear transform (.mat/.txt) applied before the first stage.
+TRANSFORM_COLUMNS = ("initial_transform",)
 # Everything path-like; any other column is passthrough metadata.
-PATH_COLUMNS = VOLUME_COLUMNS + KEYPOINT_COLUMNS
+PATH_COLUMNS = VOLUME_COLUMNS + KEYPOINT_COLUMNS + TRANSFORM_COLUMNS
 # Columns the metrics CSV appends after the input columns, and therefore
 # reserved as input column names.
 METRIC_COLUMNS = (
     "dice", "num_folds",
     "tre_median", "tre_mean", "tre_initial_median", "robustness",
+    "inverse_residual_mm",
 )
 # Keypoint CSV coordinate columns (matched case-insensitively).
 _XYZ = ("x", "y", "z")
@@ -40,22 +40,10 @@ def strip_nifti_ext(path):
 
 
 def read_pairs_csv(path):
-    """Read a registration-pairs CSV with a header row.
+    """Read pair paths relative to the CSV, preserving extra columns as metadata.
 
-    The header must contain ``fixed`` and ``moving``; the optional columns are
-    those in :data:`VOLUME_COLUMNS` and :data:`KEYPOINT_COLUMNS`. Empty cells
-    there mean "absent" and relative paths resolve against the CSV's parent
-    directory. Any other column is preserved verbatim as opaque metadata (not
-    resolved as a path or validated) and carried through to the metrics CSV.
-
-    Returns
-    -------
-    columns : list of str
-        The CSV header, in order.
-    rows : list of dict
-        One dict per row mapping each path column to an absolute path or
-        ``None``, and each metadata column to its raw string value.
-    """
+    Requires fixed,moving headers. Empty optional path cells become None.
+    Returns (columns, rows)."""
     base = os.path.dirname(os.path.abspath(path))
     with open(path, newline="") as handle:
         reader = csv.DictReader(handle)
@@ -83,20 +71,9 @@ def read_pairs_csv(path):
 
 
 def read_keypoints(path):
-    """Read a keypoint CSV.
+    """Read (columns, rows, coordinates) from a landmark CSV.
 
-    The header must contain ``x``, ``y`` and ``z`` columns (case-insensitive);
-    any other column -- a landmark id, a label -- is carried through unchanged.
-
-    Returns
-    -------
-    columns : list of str
-        The CSV header, in order.
-    rows : list of dict
-        One dict per row, values as raw strings.
-    coordinates : list of tuple of float
-        Each row's ``(x, y, z)``, in the file's own coordinate convention.
-    """
+    Requires case-insensitive x,y,z columns; extra columns are preserved."""
     with open(path, newline="") as handle:
         reader = csv.DictReader(handle)
         columns = list(reader.fieldnames or [])
@@ -127,6 +104,8 @@ def read_keypoints(path):
             ) from None
     if not coordinates:
         raise ValueError(f"{path}: keypoint CSV has no rows.")
+    if not all(math.isfinite(value) for point in coordinates for value in point):
+        raise ValueError(f"{path}: keypoint coordinates must be finite.")
     return columns, rows, coordinates
 
 
