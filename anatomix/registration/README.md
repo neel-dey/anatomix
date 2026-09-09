@@ -321,13 +321,13 @@ python anatomix-register.py --fixed fixed.nii.gz --moving moving.nii.gz \
 The dataset (8 subjects, abdominal MRI and CT with organ labels and
 foreground masks) is available from the
 [Learn2Reg AbdomenMRCT](https://cloud.imi.uni-luebeck.de/s/yiQZfo43YBBg7zL/download/AbdomenMRCT.zip)
-challenge. MRI (`_0000`) is registered to CT (`_0001`). In the paper,
-subject 1 is the validation subject and subjects 2-8 are the test set.
+challenge. MRI (`_0000`) is registered to CT (`_0001`). Both rows are the
+mean and median over the eight pairs.
 
-| Pipeline | Mean Dice (8 pairs) | Test median Dice (subjects 2-8) | Folds |
+| Pipeline | Mean Dice | Median Dice | Folds |
 |---|---|---|---|
-| anatomix + FireANTs (this script, `anatomix-dev-vit` features) | 0.879 | 0.898 | 0 |
-| anatomix + ConvexAdam (ICLR'25 paper, `anatomix` features) | 0.756 | 0.833 | — |
+| anatomix + FireANTs (this script, `anatomix-dev-vit` features) | 0.879 | 0.892 | 0 |
+| anatomix + ConvexAdam (ICLR'25 paper, `anatomix` features) | 0.756 | 0.854 | — |
 
 **anatomix + FireANTs.** The batch command below, or the
 [notebook](tutorials/anatomix_registration_fireants.ipynb), which also
