@@ -1,4 +1,0 @@
-.tmp/
-.mpl/
-__pycache__/
-results/**/*.nii.gz

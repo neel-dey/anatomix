@@ -143,14 +143,18 @@ def build_parser():
     )
     tf.add_argument(
         "--step-size", default=None,
-        help="Per-stage Adam learning rate. Default 1.0 for deformable stages, "
-        "0.01 for rigid/affine stages.",
+        help="Per-stage Adam learning rate, one value per --transform stage. "
+        "For a deformable stage it is the rate of the deformation; for a rigid "
+        "or affine stage it is the rate of the rotation or linear part, and "
+        "the translation uses --translation-step-size. Default 1.0 for "
+        "deformable stages, 0.01 for rigid/affine stages.",
     )
     tf.add_argument(
         "--translation-step-size", default=None,
-        help="Per-stage dimensionless translation learning rate for rigid/affine; "
-        "'na' for deformable. Translation is normalized by the fixed physical "
-        "FOV radius. Default: tied to --step-size.",
+        help="Per-stage learning rate of the translation of rigid/affine "
+        "stages ('na' for deformable stages). Translation is measured in "
+        "units of the fixed image's physical radius, so the same value works "
+        "at any voxel size. Default: the stage's --step-size.",
     )
     tf.add_argument(
         "--shrink-factors", default=None,
@@ -247,6 +251,13 @@ def build_parser():
     misc.add_argument("--seed", type=int, default=12345, help="Random seed.")
     misc.add_argument("--tolerance", type=float, default=1e-6,
                       help="FireANTs convergence tolerance (loss slope over the last 10 iterations); use inf to disable early stopping.")
+    misc.add_argument(
+        "--gradient-checkpointing", action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Recompute the cross-correlation intermediates during the "
+        "backward pass instead of storing them, to reduce GPU memory "
+        "(cc and masked_cc stages only).",
+    )
     misc.add_argument(
         "--device", default="auto",
         help="Compute device: 'auto' (pick the visible CUDA device with the "
@@ -504,6 +515,7 @@ def build_stages(args):
             "shrink": shrinks[i], "iters": iters[i], "cc_kernel": cc_kernels[i],
             "smooth_grad": grad_sigmas[i], "smooth_warp": warp_sigmas[i],
             "tolerance": args.tolerance,
+            "checkpointing": bool(args.gradient_checkpointing),
         }
         for i in range(n)
     ]
@@ -1026,19 +1038,3 @@ def prepare(args):
     args.output_dir = os.path.abspath(args.output_dir)
     return pairs, input_columns, stages
 
-
-def main(argv=None):
-    """Parse arguments, validate, and run the registration pipeline."""
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    try:
-        pairs, input_columns, stages = prepare(args)
-    except ValueError as error:
-        parser.error(str(error))
-    from .pipeline import run  # deferred: --help and validation need no backend
-
-    run(args, pairs, input_columns, stages)
-
-
-if __name__ == "__main__":
-    main()

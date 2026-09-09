@@ -1,12 +1,10 @@
 """Compose FireANTs rigid, affine and deformable stages.
 
-Grids map fixed voxels into the original moving image. Every stage registers
-the fixed features against features re-extracted from the moving image
-resampled onto the fixed grid by the transform so far, and fits an
-identity-initialized residual: FireANTs' warps assume both images share one
-voxel grid, and network features are not warp-equivariant. Linear matrices
-compose as T_old @ T_res; dense fields as T_old(T_res(x)). Final outputs
-resample the original moving data once."""
+Grids map fixed voxels into the original moving image. Before every stage the
+moving image is resampled onto the fixed grid with the transform so far, its
+features are extracted there, and the stage fits an identity-initialized
+residual. Linear matrices compose as T_old @ T_res; dense fields as
+T_old(T_res(x)). The final outputs resample the original moving data once."""
 from collections import namedtuple
 import inspect
 
@@ -69,6 +67,8 @@ def _common_kwargs(stage, fixed_images, moving_images, verbose):
     )
     if stage["cc_kernel"] is not None:
         kwargs["cc_kernel_size"] = stage["cc_kernel"]
+    if stage.get("checkpointing") and stage["loss"] in ("cc", "masked_cc"):
+        kwargs["loss_params"] = {"checkpointing": True}
     return kwargs
 
 

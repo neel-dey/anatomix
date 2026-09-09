@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Install the anatomix author's FireANTs fork as an editable clone next to this script.
+# Install the FireANTs registration library (a minimally modified fork) as an
+# editable clone next to this script.
 # Usage: bash install_fireants.sh [--no-fused-ops]
 # The fused CUDA kernels need a CUDA toolkit that matches the installed PyTorch
 # build (set CUDA_HOME and TORCH_CUDA_ARCH_LIST if the build cannot find it).
@@ -9,8 +10,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLONE="${HERE}/fireants"
 REPO_URL="https://github.com/neel-dey/FireANTs"
-# Revision this pipeline was verified against (includes dimensionless
-# translation for rigid/affine stages). An existing clone is left as it is.
+# Pinned fork revision. An existing clone is left as it is.
 FIREANTS_REV="1b39f6d1aa39ecbe2c8e2d478bce15d4a1c93cfa"
 
 WITH_FUSED_OPS=1

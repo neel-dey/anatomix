@@ -1,3 +1,0 @@
-# Tue Sep  8 06:51:48 PM EDT 2026  gpu=2
-anatomix-register.py --registration-pairs-csv /home/scratch/claude-6209785/-autofs-cluster-dalcalab2-users-nd480-mid-projects-migrate-amix-fants-anatomix-anatomix-registration/37294124-4dc2-4951-adad-b827d0b1e9b4/scratchpad/data/abd2.csv --fixed-minclip -450 --fixed-maxclip 450 --moving-minclip 0 --moving-maxclip 20000 --transform affine,deformable --step-size 0.01,1.0 --shrink-factors 4x2x1,6x4x2x1 --iterations 100x100x100,100x100x100x100 --cc-kernel-widths 9x7x5,21x13x11x9 --smooth-grad-sigma na,1.0 --smooth-warp-sigma na,0.5 --collapse-output-transforms 0
-exit=0 seconds=87

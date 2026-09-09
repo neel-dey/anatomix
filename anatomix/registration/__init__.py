@@ -2,9 +2,9 @@
 
 - ``anatomix-register.py``: the FireANTs command-line entry point.
 - :mod:`.registration_infrastructure`: the pipeline behind it.
-- :mod:`.registration_backend`: the retained ConvexAdam backend, and the
-  gitignored FireANTs clone that ``registration_backend/install_fireants.sh``
-  creates.
+- :mod:`.registration_backend`: the ConvexAdam backend of the ICLR'25 paper,
+  and the gitignored FireANTs clone that
+  ``registration_backend/install_fireants.sh`` creates.
 
 Subpackages import lazily, so importing this package never imports FireANTs.
 """

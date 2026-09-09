@@ -1,3 +1,5 @@
 # FireANTs backend: gitignored editable clone, installed via
 # registration_backend/install_fireants.sh. The clone is never committed.
 registration_backend/fireants/
+# Local test scripts and results.
+tests/
