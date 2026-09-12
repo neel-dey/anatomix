@@ -41,7 +41,7 @@ value per stage, `AxB` one value per pyramid level.
 
 ```
 Inputs (choose one mode)
-  --fixed PATH, --moving PATH          One pair of scalar 3D NIfTI images.
+  --fixed PATH, --moving PATH          One pair of scalar 3D NIfTI or OME-Zarr images.
   --fixed-dir DIR, --moving-dir DIR    Batch: directories paired by sorted filename.
   --registration-pairs-csv PATH        Batch: CSV with columns fixed,moving[,fixed_mask,moving_mask,
                                        fixed_seg,moving_seg,fixed_keypoints,moving_keypoints,initial_transform].

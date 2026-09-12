@@ -24,6 +24,7 @@ from .io_utils import (
     write_keypoints,
 )
 from .metrics import dice_score, keypoint_metrics
+from .ome_zarr import is_ome_zarr, open_ome_zarr
 from .warp_io import (
     array_spacing,
     as_batch,
@@ -156,6 +157,9 @@ def load_initial_transform(pair):
         return None
 
     def geometry(path):
+        if is_ome_zarr(path):
+            source = open_ome_zarr(path)
+            return source.shape_xyz, source.affine_ras
         image = nib.load(path)
         return tuple(int(n) for n in image.shape[:3]), image.affine
 

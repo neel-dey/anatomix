@@ -2,6 +2,7 @@
 import csv
 import math
 import os
+from urllib.parse import urlsplit
 
 NIFTI_EXTS = (".nii", ".nii.gz")
 KEYPOINT_EXT = ".csv"
@@ -31,7 +32,7 @@ KEYPOINT_CONVENTIONS = ("lps", "ras", "voxel")
 
 def strip_nifti_ext(path):
     """Return the file stem of ``path`` with a ``.nii``/``.nii.gz`` suffix removed."""
-    name = os.path.basename(path)
+    name = os.path.basename(urlsplit(path).path.rstrip("/"))
     if name.endswith(".nii.gz"):
         return name[:-7]
     if name.endswith(".nii"):
@@ -62,7 +63,7 @@ def read_pairs_csv(path):
                     resolved[key] = value  # opaque metadata, passthrough
                 elif not value:
                     resolved[key] = None
-                elif os.path.isabs(value):
+                elif os.path.isabs(value) or "://" in value:
                     resolved[key] = value
                 else:
                     resolved[key] = os.path.join(base, value)

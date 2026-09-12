@@ -16,6 +16,10 @@ setup(
     url="https://github.com/neel-dey/anatomix",
     packages=find_packages(),
     install_requires=requirements,
+    extras_require={
+        "zarr": ["zarr>=2.18,<4", "fsspec[http]>=2024.6"],
+        "zarr-s3": ["zarr>=2.18,<4", "fsspec[http]>=2024.6", "s3fs>=2024.6"],
+    },
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Science/Research",

@@ -15,10 +15,14 @@ from ._fireants import (
     torch_grid_sampler_3d,
 )
 from .io_utils import KEYPOINT_CONVENTIONS
+from .ome_zarr import is_ome_zarr, open_ome_zarr
 
 
 def load_image(path, device, is_segmentation=False):
-    """Load a NIfTI on device, including its physical-coordinate matrices."""
+    """Load an image on device, including its physical-coordinate matrices."""
+    if is_ome_zarr(path):
+        return Image(open_ome_zarr(path).read_image(), device=device,
+                     is_segmentation=is_segmentation)
     return Image.load_file(path, device=device, is_segmentation=is_segmentation)
 
 

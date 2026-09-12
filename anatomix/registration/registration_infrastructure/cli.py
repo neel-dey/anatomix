@@ -5,6 +5,8 @@ import os
 import nibabel as nib
 import numpy as np
 
+from .ome_zarr import is_ome_zarr, open_ome_zarr
+
 from .io_utils import (
     KEYPOINT_COLUMNS,
     KEYPOINT_CONVENTIONS,
@@ -50,9 +52,9 @@ def build_parser():
 
     mode = parser.add_argument_group("input mode (choose exactly one)")
     mode.add_argument(
-        "--fixed", help="Single-pair fixed image (.nii/.nii.gz).")
+        "--fixed", help="Fixed NIfTI or OME-Zarr path/URL; quote selectors, e.g. '#level=2&channel=0&time=0'.")
     mode.add_argument(
-        "--moving", help="Single-pair moving image (.nii/.nii.gz).")
+        "--moving", help="Moving NIfTI or OME-Zarr path/URL (same selectors as --fixed).")
     mode.add_argument(
         "--fixed-dir",
         help="Batch: directory of fixed images. Fixed and moving directories "
@@ -622,7 +624,7 @@ def _list_dir(directory, role, extensions, description):
 
 
 def _list_nifti(directory, role):
-    return _list_dir(directory, role, NIFTI_EXTS, ".nii/.nii.gz")
+    return _list_dir(directory, role, NIFTI_EXTS + (".zarr",), "NIfTI/OME-Zarr")
 
 
 def _list_keypoints(directory, role):
@@ -630,6 +632,8 @@ def _list_keypoints(directory, role):
 
 
 def _abspath(value):
+    if value and "://" in value:
+        return value
     return os.path.abspath(value) if value else None
 
 
@@ -796,6 +800,12 @@ def resolve_inputs(args):
 
 def _volume_geometry(path, role):
     """Validate one volume path and return its ``(spatial_shape, affine)`` from the header."""
+    if is_ome_zarr(path):
+        try:
+            source = open_ome_zarr(path)
+            return source.shape_xyz, source.affine_ras
+        except ValueError as exc:
+            raise ValueError(f"{role}: {exc}") from exc
     if not os.path.isfile(path):
         raise ValueError(f"{role}: file not found: {path}")
     if not path.endswith(NIFTI_EXTS):
