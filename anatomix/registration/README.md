@@ -224,8 +224,9 @@ after a warm-up run:
 | `--assemble-feats-on-cpu` | 6.6 GB | 28 s | 0.857180 |
 | `--device cuda:0,cuda:1` | 8.2 GB, 3.5 GB | 22 s | 0.857443 |
 
-Below a chunk of 8 the loss is no longer the largest term, so smaller chunks
-cost time without saving memory.
+Chunking stops paying at 8: the loss is down to 6.6 GB by then and the 8.2 GB
+peak is feature extraction, so smaller chunks only cost time.
+`--assemble-feats-on-cpu` lowers that floor instead.
 
 None of these change the objective, but a `masked_*` loss is a ratio, so the
 chunks accumulate a numerator and a denominator and divide once: results agree
