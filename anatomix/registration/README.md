@@ -95,9 +95,8 @@ Outputs
 Run control
   --device auto|cpu|cuda|cuda:N        auto picks the visible GPU with the most free memory.
   --device cuda:N,cuda:M               Split the deformable stages over several GPUs (see GPU memory).
-  --loss-channel-chunk N               Evaluate the loss of every stage N feature channels at a time; same objective, less GPU memory.
-  --low-memory                         Keep the feature volumes in host memory and compute them in pieces.
-  --gradient-checkpointing             Recompute the cross-correlation intermediates in the backward pass; less GPU memory.
+  --loss-channel-chunk N|none          Feature channels per loss evaluation (default 8); none evaluates every channel at once.
+  --assemble-feats-on-cpu              Assemble the feature volumes in host memory instead of on the GPU.
   --seed N                             Random seed (default 12345).
   --verbose / --no-verbose             Print inputs, stage progress, metrics and peak GPU memory.
 ```
@@ -194,13 +193,17 @@ squared error. The `masked_` variants restrict the loss to the mask overlap.
 
 Memory grows with the number of fixed-grid voxels times the number of
 channels (45 for `anatomix+mindssc` with a mask, at the default backbone), and
-most of it is the cross-correlation loss. Three options reduce it without
-changing what is optimized:
+most of it is the cross-correlation loss.
 
-- `--loss-channel-chunk N` evaluates the loss of every stage `N` feature
-  channels at a time and accumulates the gradient. It computes the same
-  objective and the same gradient, up to summation order, while the loss memory
-  scales with `N` instead of the channel count. It works on one GPU.
+The loss is therefore chunked by default: every stage evaluates it
+`--loss-channel-chunk` feature channels at a time and accumulates the gradient,
+for the same objective and the same gradient up to summation order. The loss
+memory scales with the chunk instead of the channel count. Pass
+`--loss-channel-chunk none` to evaluate every channel at once. Only local
+losses can be chunked, so `mi` stages and `--device cpu` ignore it.
+
+Two more options reduce memory further, and neither changes what is optimized:
+
 - `--device cuda:0,cuda:1` cuts the fixed grid of every deformable stage into
   slabs along its longest axis, one per GPU. The slabs exchange the borders
   that the loss windows, the smoothing and the warp composition need, so every
@@ -213,8 +216,8 @@ changing what is optimized:
   Everything else (features, linear stages, outputs) runs on the first GPU.
   Borders travel through pinned host memory, because direct GPU-to-GPU copies
   silently corrupt data on some PCIe hosts.
-- `--low-memory` builds the feature volumes in pieces and assembles them in host
-  memory. The network and MIND-SSC still run on the GPU; what moves to the host
+- `--assemble-feats-on-cpu` builds the feature volumes in pieces and assembles
+  them in host memory. The network and MIND-SSC still run on the GPU; what moves
   is the buffer they fill, so the GPU holds the single-channel image plus one
   batch of sliding windows or one MIND-SSC slab, never a whole feature volume.
   It removes one fixed term, the feature volume itself; the sliding-window batch
@@ -224,25 +227,26 @@ changing what is optimized:
   6.2 GB at a batch of 4, for about 20% more time.
 
 Peak GPU memory of one 192×160×192 AbdomenMRCT pair with the settings of the
-example below (mean Dice over the eight pairs stays within 0.0001):
+example below:
 
-| Options | Peak per GPU |
-|---|---|
-| default | 24 GB |
-| `--gradient-checkpointing` | 19 GB |
-| `--loss-channel-chunk 8` | 10 GB |
-| `--device cuda:0,cuda:1 --loss-channel-chunk 8` | 10 GB, 4 GB |
-| the same with `--low-memory` and a sliding-window batch of 1 | 4 GB, 4 GB |
+| Options | Peak per GPU | Dice |
+|---|---|---|
+| default (`--loss-channel-chunk 8`) | 8.2 GB | 0.856832 |
+| `--loss-channel-chunk 16` | 10.4 GB | 0.856832 |
+| `--loss-channel-chunk none` | 23.9 GB | 0.856832 |
+| `--assemble-feats-on-cpu` | 6.5 GB | 0.856832 |
+| `--device cuda:0,cuda:1` | 8.2 GB, 3.5 GB | 0.856844 |
 
-An affine + deformable run on a 240×240×155 BraTS-Reg pair drops from 38 GB
-to 15 GB on one GPU with `--loss-channel-chunk 8`.
+Chunking costs about 10% more time and leaves the result bit-identical; the
+two-GPU row differs in the sixth digit for the identity-start reason above. An
+affine + deformable run on a 240×240×155 BraTS-Reg pair needs 15 GB by default
+and 38 GB with `--loss-channel-chunk none`.
 
 Rigid and affine stages run on the first GPU and load both feature volumes
 there. For volumes that do not fit, register fewer channels (`--features
 anatomix` or `intensity`) or pass a linear transform computed elsewhere with
-`--initial-transform`. Mutual information is a global
-loss: `mi` stages cannot use `--loss-channel-chunk`, and deformable `mi`
-stages run on one GPU.
+`--initial-transform`. Mutual information is a global loss: `mi` stages ignore
+`--loss-channel-chunk`, and deformable `mi` stages run on one GPU.
 </details>
 
 ## Examples
@@ -352,9 +356,9 @@ python anatomix-register.py --registration-pairs-csv pairs.csv \
 ```
 
 **Large volumes on small GPUs.** The deformable stage runs at full resolution,
-split over two GPUs with its loss evaluated eight channels at a time, and the
-features stay in host memory between stages. The rigid stage runs on the first
-GPU, with the same chunked loss, and loads both feature volumes there:
+split over two GPUs, and the feature volumes are assembled in host memory with
+a sliding-window batch of 1. The rigid stage runs on the first GPU and loads
+both feature volumes there. Both stages chunk their loss, which is the default:
 
 ```bash
 python anatomix-register.py --fixed fixed.nii.gz --moving moving.nii.gz \
@@ -362,13 +366,13 @@ python anatomix-register.py --fixed fixed.nii.gz --moving moving.nii.gz \
     --transform rigid,deformable --step-size 0.01,1.0 \
     --shrink-factors 8x4x2,8x4x2x1 --iterations 100x100x100,100x100x100x100 \
     --cc-kernel-widths 15x11x9,15x11x9x7 --smooth-grad-sigma na,1.0 --smooth-warp-sigma na,0.5 \
-    --device cuda:0,cuda:1 --loss-channel-chunk 8 --low-memory \
+    --device cuda:0,cuda:1 --assemble-feats-on-cpu \
     --sliding-window-params 128,1,0.8,gaussian,0.25 \
     --output-dir large-out
 ```
 
-With a single GPU, drop the `--device` list; `--loss-channel-chunk` and
-`--low-memory` work the same way.
+With a single GPU, drop the `--device` list; the chunked loss and
+`--assemble-feats-on-cpu` work the same way.
 
 ## Reproducing our Learn2Reg AbdomenMRCT results
 

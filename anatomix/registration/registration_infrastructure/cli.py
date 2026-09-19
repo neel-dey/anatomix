@@ -28,8 +28,26 @@ VALID_LOSSES = {"cc", "mi", "mse", "masked_cc", "masked_mi", "masked_mse"}
 CC_LOSSES = {None, "cc", "masked_cc"}
 # FireANTs floors every pyramid level at this many voxels per axis.
 MIN_IMG_SIZE = 32
+# Feature channels per loss evaluation. Chunking is on by default: it computes the same
+# objective and gradient, and on one AbdomenMRCT pair cut the peak from 23.9 to 8.2 GiB.
+DEFAULT_LOSS_CHANNEL_CHUNK = 8
 # Header tolerance for a mask/segmentation against its image (mm, direction cosines).
 GEOMETRY_ATOL = 1e-4
+
+
+def parse_channel_chunk(value):
+    """``--loss-channel-chunk``: a positive integer, or 'none' to chunk nothing."""
+    if value.strip().lower() == "none":
+        return None
+    try:
+        count = int(value)
+    except ValueError:
+        count = 0
+    if count < 1:
+        raise argparse.ArgumentTypeError(
+            f"expected a positive integer or 'none', got {value!r}."
+        )
+    return count
 
 
 # Parser
@@ -252,24 +270,23 @@ def build_parser():
     misc.add_argument("--tolerance", type=float, default=1e-6,
                       help="FireANTs convergence tolerance (loss slope over the last 10 iterations); use inf to disable early stopping.")
     misc.add_argument(
-        "--gradient-checkpointing", action=argparse.BooleanOptionalAction,
+        "--assemble-feats-on-cpu", action=argparse.BooleanOptionalAction,
         default=False,
-        help="Recompute the cross-correlation intermediates during the "
-        "backward pass instead of storing them, to reduce GPU memory "
-        "(cc and masked_cc stages only).",
+        help="Assemble the feature volumes in host memory instead of on the "
+        "GPU: the network and MIND-SSC still run on the GPU, one batch of "
+        "sliding windows or one slab at a time, but the volume they fill "
+        "lives on the CPU. Slower; results agree with the default up to "
+        "floating-point rounding. Linear stages still load both feature "
+        "volumes on the first device.",
     )
     misc.add_argument(
-        "--low-memory", action=argparse.BooleanOptionalAction, default=False,
-        help="Keep the feature volumes in host memory and compute them in "
-        "pieces, so that a GPU holds only what its current step needs. "
-        "Slower; results agree with the default up to floating-point rounding. "
-        "Linear stages still load both feature volumes on the first device.",
-    )
-    misc.add_argument(
-        "--loss-channel-chunk", type=int, default=None, metavar="N",
+        "--loss-channel-chunk", type=parse_channel_chunk,
+        default=DEFAULT_LOSS_CHANNEL_CHUNK, metavar="N",
         help="Evaluate the loss of every stage N feature channels at a time "
-        "instead of all at once. Same result, less GPU memory, more time "
-        "(cc, mse and their masked variants).",
+        "instead of all at once, for the same objective and gradient with "
+        f"less GPU memory (default {DEFAULT_LOSS_CHANNEL_CHUNK}). Pass 'none' "
+        "to evaluate every channel at once. Only local losses can be chunked, "
+        "so mi stages ignore it, as does --device cpu.",
     )
     misc.add_argument(
         "--device", default="auto",
@@ -530,7 +547,9 @@ def build_stages(args):
             "shrink": shrinks[i], "iters": iters[i], "cc_kernel": cc_kernels[i],
             "smooth_grad": grad_sigmas[i], "smooth_warp": warp_sigmas[i],
             "tolerance": args.tolerance,
-            "checkpointing": bool(args.gradient_checkpointing),
+            "channel_chunk": stage_channel_chunk(
+                args.loss_channel_chunk, losses[i], args.device
+            ),
         }
         for i in range(n)
     ]
@@ -1028,26 +1047,28 @@ def validate_device(spec):
 
 
 def validate_sharding(args, stages):
-    """Several devices need a local loss in the deformable stages, a channel chunk in all stages."""
-    if args.loss_channel_chunk is not None and args.loss_channel_chunk < 1:
-        raise ValueError("--loss-channel-chunk: expected a positive integer.")
-    if "," not in args.device and args.loss_channel_chunk is None:
+    """Splitting a deformable stage over several devices needs a local loss.
+
+    Channel chunking is a default, so stages that cannot be chunked (mi, and
+    anything on the CPU) drop it instead of failing; see ``stage_channel_chunk``."""
+    if "," not in args.device:
         return
-    if args.device == "cpu":
-        raise ValueError("--loss-channel-chunk needs a CUDA device.")
     for stage in stages:
-        if not (stage["loss"] or "").endswith("mi"):
-            continue
-        if args.loss_channel_chunk is not None:
-            raise ValueError(
-                "Mutual information is a global loss: mi stages cannot use "
-                "--loss-channel-chunk."
-            )
-        if stage["kind"] == "deformable":
+        if (stage["loss"] or "").endswith("mi") and stage["kind"] == "deformable":
             raise ValueError(
                 "Mutual information is a global loss: deformable mi stages run on "
                 "one device."
             )
+
+
+def stage_channel_chunk(chunk, loss, device_spec):
+    """``--loss-channel-chunk`` for one stage, or None where it does not apply.
+
+    Only local losses can be chunked, and it saves GPU memory, so mi stages and
+    CPU runs evaluate every channel at once."""
+    if chunk is None or device_spec == "cpu" or (loss or "").endswith("mi"):
+        return None
+    return chunk
 
 
 def prepare(args):

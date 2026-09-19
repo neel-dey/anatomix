@@ -81,7 +81,6 @@ def register_pair(pair, index, args, stages, extract_features, devices, paths):
         reextract_moving=moving_features,
         has_mask_channel=masked,
         devices=devices,
-        channel_chunk=args.loss_channel_chunk,
         verbose=args.verbose,
     )
     grid = result.warped_coordinates

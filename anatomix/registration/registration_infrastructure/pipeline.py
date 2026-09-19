@@ -198,13 +198,13 @@ class FeatureExtractor:
 
     The channels are anatomix network features (masked), MIND-SSC descriptors
     and, for masked losses, the binary mask as the last channel. With
-    ``--low-memory`` they are computed piecewise and returned in host memory."""
+    ``--assemble-feats-on-cpu`` they are computed piecewise and assembled in host memory."""
 
     def __init__(self, args, model):
         self.features = args.features
         self.model = model
         self.prepare = (
-            prepare_feature_channels_on_host if args.low_memory
+            prepare_feature_channels_on_host if args.assemble_feats_on_cpu
             else prepare_feature_channels
         )
         self.config = dict(

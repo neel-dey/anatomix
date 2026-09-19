@@ -69,8 +69,6 @@ def _common_kwargs(stage, fixed_images, moving_images, verbose):
     )
     if stage["cc_kernel"] is not None:
         kwargs["cc_kernel_size"] = stage["cc_kernel"]
-    if stage.get("checkpointing") and stage["loss"] in ("cc", "masked_cc"):
-        kwargs["loss_params"] = {"checkpointing": True}
     return kwargs
 
 
@@ -146,7 +144,7 @@ def _initial_matrix(
 def run_registration(
     fixed_images, moving_images, stages, initialization="none", verbose=False,
     reextract_moving=None, has_mask_channel=False, init_images=None,
-    initial_transform=None, devices=None, channel_chunk=None,
+    initial_transform=None, devices=None,
 ):
     """Run stages and return cumulative transforms.
 
@@ -156,15 +154,15 @@ def run_registration(
     ``initial_transform`` is a physical fixed-to-moving (N,4,4) matrix instead.
     ``reextract_moving(grid)`` must return the moving features on the fixed geometry
     for a given cumulative grid. Set ``has_mask_channel`` when the last channel is a mask.
-    Deformable stages are split over ``devices`` when there are several. Every stage
-    evaluates its loss ``channel_chunk`` channels at a time when it is set."""
+    Deformable stages are split over ``devices`` when there are several. A stage
+    evaluates its loss ``stage['channel_chunk']`` channels at a time when it is set."""
     if reextract_moving is None:
         raise ValueError("run_registration requires a reextract_moving callback.")
     stage_results = []
     snapshots = []
     # Where transforms are composed; the feature channels may be in host memory.
     device = fixed_images.get_torch2phy().device
-    sharded = channel_chunk is not None or (devices is not None and len(devices) > 1)
+    several_devices = devices is not None and len(devices) > 1
 
     # Cumulative physical matrix, valid until the first deformable stage.
     cum_linear = _initial_matrix(
@@ -181,6 +179,9 @@ def run_registration(
         kind = stage["kind"]
         label = f"{index}-{kind}"
         stage_masked = stage["loss"].startswith("masked_")
+        # Chunking is a GPU memory optimization; --device auto may have resolved to the CPU.
+        channel_chunk = stage.get("channel_chunk") if device.type == "cuda" else None
+        sharded = channel_chunk is not None or several_devices
         # Only the sharded deformable stage reads its images from host memory.
         on_device = None if (kind == "deformable" and sharded) else device
         f_imgs = _stage_images(fixed_images, has_mask_channel, stage_masked, on_device)
