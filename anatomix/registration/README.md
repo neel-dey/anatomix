@@ -217,8 +217,11 @@ changing what is optimized:
   memory. The network and MIND-SSC still run on the GPU; what moves to the host
   is the buffer they fill, so the GPU holds the single-channel image plus one
   batch of sliding windows or one MIND-SSC slab, never a whole feature volume.
-  Combine it with a sliding-window batch of 1
-  (`--sliding-window-params 128,1,0.8,gaussian,0.25`).
+  It removes one fixed term, the feature volume itself; the sliding-window batch
+  sets what is left, roughly linearly. Lower the batch when feature extraction is
+  what does not fit: on a 240×240×155 volume with 128-voxel windows,
+  `--sliding-window-params 128,1,0.8,gaussian,0.25` peaks at 1.7 GB against
+  6.2 GB at a batch of 4, for about 20% more time.
 
 Peak GPU memory of one 192×160×192 AbdomenMRCT pair with the settings of the
 example below (mean Dice over the eight pairs stays within 0.0001):
