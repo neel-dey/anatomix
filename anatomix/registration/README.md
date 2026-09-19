@@ -66,7 +66,7 @@ Transform chain
                                        (default masked_cc when a mask is given, else cc).
   --step-size A,B                      Learning rate per stage: of the deformation for a deformable stage, of the
                                        rotation (rigid) or linear part (affine) for a linear stage
-                                       (default 1.0 deformable, 0.01 rigid/affine).
+                                       (default 1.0 deformable, 0.001 rigid/affine).
   --translation-step-size A,B          Learning rate of the translation of rigid/affine stages, in units of the
                                        fixed image's physical radius; na for deformable (default = --step-size).
   --shrink-factors AxB,AxB             Pyramid per stage, strictly decreasing (default 6x4x2x1).

@@ -165,7 +165,7 @@ def build_parser():
         "For a deformable stage it is the rate of the deformation; for a rigid "
         "or affine stage it is the rate of the rotation or linear part, and "
         "the translation uses --translation-step-size. Default 1.0 for "
-        "deformable stages, 0.01 for rigid/affine stages.",
+        "deformable stages, 0.001 for rigid/affine stages.",
     )
     tf.add_argument(
         "--translation-step-size", default=None,
@@ -382,9 +382,13 @@ def _split_stages(value, n, name):
 
 
 def _resolve_step_sizes(value, kinds, n):
-    """Per-stage Adam learning rate: 1.0 for deformable, 0.01 for linear stages."""
+    """Per-stage Adam learning rate: 1.0 for deformable, 0.001 for linear stages.
+
+    The linear rate is a fraction of the fixed image's physical radius per step. Much
+    above 0.001 a long schedule can walk a masked stage clean out of the fixed mask,
+    where the loss stops opposing it because it divides by the shrinking overlap."""
     if value is None:
-        return [1.0 if kinds[i] == "deformable" else 0.01 for i in range(n)]
+        return [1.0 if kinds[i] == "deformable" else 0.001 for i in range(n)]
     values = [float(p) for p in _split_stages(value, n, "--step-size")]
     if any(v <= 0 for v in values):
         raise ValueError("--step-size: values must be positive.")
