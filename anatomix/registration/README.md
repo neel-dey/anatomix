@@ -192,91 +192,63 @@ squared error. The `masked_` variants restrict the loss to the mask overlap.
 <details>
 <summary><b>GPU memory</b></summary>
 
-Memory grows with the number of fixed-grid voxels times the number of
-channels (45 for `anatomix+mindssc` with a mask, at the default backbone), and
-most of it is the cross-correlation loss.
+Memory scales with fixed-grid voxels times channels (45 for `anatomix+mindssc`
+with a mask), and most of it is the cross-correlation loss.
 
-The loss is therefore chunked by default: every stage evaluates it
-`--loss-channel-chunk` feature channels at a time and accumulates the gradient,
-for the same objective and the same gradient up to summation order. The loss
-memory scales with the chunk instead of the channel count. Pass
-`--loss-channel-chunk none` to evaluate every channel at once. Rigid and affine
-`mi` stages and `--device cpu` ignore it.
-
-Two more options reduce memory further, and neither changes what is optimized:
-
-- `--device cuda:0,cuda:1` cuts the fixed grid of every deformable stage into
-  slabs along its longest axis, one per GPU. The slabs exchange the borders
-  that the loss windows, the smoothing and the warp composition need, so every
-  iteration computes what the single-GPU run computes, up to summation order.
-  The final field can still differ by a fraction of a voxel, because a
-  deformable stage starts from an exact identity warp, where every sample sits
-  on a voxel corner and the one-sided interpolation gradient is decided by
-  coordinate rounding, which differs between a slab and the full grid. On the
-  eight pairs below that moves the mean Dice by 0.0003 and the worst pair by
-  0.0016.
-  Everything else (features, linear stages, outputs) runs on the first GPU.
-  Borders travel through pinned host memory, because direct GPU-to-GPU copies
-  silently corrupt data on some PCIe hosts.
-- `--assemble-feats-on-cpu` builds the feature volumes in pieces and assembles
-  them in host memory. The network and MIND-SSC still run on the GPU; what moves
-  is the buffer they fill, so the GPU holds the single-channel image plus one
-  batch of sliding windows or one MIND-SSC slab, never a whole feature volume.
-  It removes one fixed term, the feature volume itself; the sliding-window batch
-  sets what is left, roughly linearly. Lower the batch when feature extraction is
-  what does not fit: on a 240×240×155 volume with 128-voxel windows,
+- `--loss-channel-chunk N` (default 8) evaluates the loss N channels at a time
+  and accumulates the gradient, so loss memory scales with N instead of the
+  channel count. `none` takes every channel at once. Rigid and affine `mi`
+  stages and `--device cpu` ignore it.
+- `--device cuda:0,cuda:1` splits each deformable stage's fixed grid into slabs
+  along its longest axis, exchanging the borders that the loss windows, the
+  smoothing and the warp composition need. Features, linear stages and outputs
+  stay on the first GPU. Borders travel through pinned host memory, because
+  direct GPU-to-GPU copies silently corrupt data on some PCIe hosts.
+- `--assemble-feats-on-cpu` keeps the feature volumes in host memory; the
+  network and MIND-SSC still run on the GPU, one sliding-window batch or
+  MIND-SSC slab at a time. Lower the batch when feature extraction is what does
+  not fit: on a 240×240×155 volume,
   `--sliding-window-params 128,1,0.8,gaussian,0.25` peaks at 1.7 GB against
   6.2 GB at a batch of 4, for about 20% more time.
 
-Peak GPU memory of one 192×160×192 AbdomenMRCT pair with the settings of the
-example below:
+One 192×160×192 AbdomenMRCT pair with the settings of the example below, timed
+after a warm-up run:
 
-| Options | Peak per GPU | Dice |
-|---|---|---|
-| default (`--loss-channel-chunk 8`) | 8.2 GB | 0.857180 |
-| `--loss-channel-chunk 16` | 10.5 GB | 0.857180 |
-| `--loss-channel-chunk none` | 24.0 GB | 0.857180 |
-| `--assemble-feats-on-cpu` | 6.6 GB | 0.857180 |
-| `--device cuda:0,cuda:1` | 8.2 GB, 3.5 GB | 0.857443 |
+| Options | Peak per GPU | Time | Dice |
+|---|---|---|---|
+| default (`--loss-channel-chunk 8`) | 8.2 GB | 23 s | 0.857180 |
+| `--loss-channel-chunk 16` | 10.5 GB | 23 s | 0.857180 |
+| `--loss-channel-chunk none` | 24.0 GB | 27 s | 0.857180 |
+| `--assemble-feats-on-cpu` | 6.6 GB | 28 s | 0.857180 |
+| `--device cuda:0,cuda:1` | 8.2 GB, 3.5 GB | 22 s | 0.857443 |
 
-Chunking costs about 10% more time. A `masked_*` loss is a ratio, so the chunks
-accumulate a numerator and a denominator and divide once, which agrees with the
-unchunked loss up to rounding rather than bit for bit; the pair above happens to
-land on the same value at every chunk size. Over the eight pairs of the
-reproduction below, chunking moves the mean Dice by 0.0004 and the worst pair by
-0.0038, and on the affine + deformable BraTS-Reg example it moves the median
-landmark error by 0.004 mm. The two-GPU row differs for the identity-start
-reason above. An affine + deformable run on a 240×240×155 BraTS-Reg pair needs
-15 GB by default and 38 GB with `--loss-channel-chunk none`.
+None of these change the objective, but a `masked_*` loss is a ratio, so the
+chunks accumulate a numerator and a denominator and divide once: results agree
+up to rounding, not bit for bit. Over the eight pairs below, chunking moves the
+mean Dice by 0.0004 and the worst pair by 0.0038, and the median landmark error
+of the BraTS-Reg example by 0.004 mm; two GPUs, 0.0003 and 0.0016. An affine +
+deformable 240×240×155 BraTS-Reg pair needs 15 GB by default, 38 GB with
+`--loss-channel-chunk none`.
 
-Rigid and affine stages run on the first GPU. They load both feature volumes
-there unless `--assemble-feats-on-cpu` is set and their loss is chunked, in
-which case the volumes stay in host memory and only the channel chunk being
-worked on is on the GPU. For volumes that still do not fit, register fewer
-channels (`--features anatomix` or `intensity`) or pass a linear transform
-computed elsewhere with `--initial-transform`.
-
-Deformable `mi` stages shard and chunk like any other. Mutual information is
-global over space, so the sharded backend reduces the intensity range and the
-joint histogram across slabs rather than a per-voxel loss, which reproduces the
-single-GPU value. Rigid and affine `mi` stages still take every channel at
-once, because the linear chunking helper expects a per-voxel loss map.
+Rigid and affine stages read their features from host memory when
+`--assemble-feats-on-cpu` is set and their loss is chunked. Deformable `mi`
+stages shard and chunk like any other, reducing the intensity range and the
+joint histogram across slabs instead of a per-voxel loss; rigid and affine `mi`
+stages take every channel at once. For volumes that still do not fit, register
+fewer channels (`--features anatomix` or `intensity`) or pass a linear
+transform with `--initial-transform`.
 </details>
 
 <details>
 <summary><b>Reproducibility</b></summary>
 
-`install_fireants.sh` compiles FireANTs' CUDA kernels, and FireANTs uses them
-for interpolation, the Adam update and the FFT downsample whenever they import.
-The fused interpolator rounds differently from the PyTorch one, so the same
-inputs give a slightly different result on a machine where the build succeeded
-than on one where it did not: over the eight pairs below, a median of 4e-4 Dice
-and 2e-3 on the most sensitive pair, which is larger than it sounds because the
-optimizer amplifies it. `--fused-ops` is therefore `off` by default, so a run
-reproduces anywhere; it cost nothing measurable on the pair in the table above
-(23 s either way). `--fused-ops on` restores the kernels. Everything else is
-already deterministic: a repeated run is bit-identical, and the seed changes
-nothing.
+FireANTs uses the CUDA kernels `install_fireants.sh` builds for interpolation,
+the Adam update and the FFT downsample, whenever `fireants_fused_ops` imports.
+The fused interpolator rounds differently from the PyTorch one, so a result
+depends on whether that build succeeded: over the eight pairs below, a median of
+4e-4 Dice and 2e-3 on the worst pair. `--fused-ops` is therefore `off` by
+default; `--fused-ops on` restores the kernels. Runs are otherwise
+deterministic, and repeating one is bit-identical.
 </details>
 
 ## Examples
@@ -385,10 +357,9 @@ python anatomix-register.py --registration-pairs-csv pairs.csv \
     --output-dir batch-out
 ```
 
-**Large volumes on small GPUs.** The deformable stage runs at full resolution,
-split over two GPUs, and the feature volumes are assembled in host memory with
-a sliding-window batch of 1. The rigid stage runs on the first GPU and reads
-them from host memory too. Both stages chunk their loss, which is the default:
+**Large volumes on small GPUs.** A full-resolution deformable stage split over
+two GPUs, with the feature volumes in host memory and one sliding window at a
+time. Drop `--device` for a single GPU; everything else is unchanged.
 
 ```bash
 python anatomix-register.py --fixed fixed.nii.gz --moving moving.nii.gz \
@@ -400,9 +371,6 @@ python anatomix-register.py --fixed fixed.nii.gz --moving moving.nii.gz \
     --sliding-window-params 128,1,0.8,gaussian,0.25 \
     --output-dir large-out
 ```
-
-With a single GPU, drop the `--device` list; the chunked loss and
-`--assemble-feats-on-cpu` work the same way.
 
 ## Reproducing our Learn2Reg AbdomenMRCT results
 
