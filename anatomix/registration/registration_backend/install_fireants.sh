@@ -10,8 +10,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLONE="${HERE}/fireants"
 REPO_URL="https://github.com/neel-dey/FireANTs"
-# Pinned fork revision. An existing clone is left as it is.
-FIREANTS_REV="279a1ddc5f1f97d4c06503841be9135409463131"
+# Pinned fork revision. An existing clone is moved to it unless it has local changes.
+FIREANTS_REV="c82f0ab39e1a477d7b32a9fff0ef47699b523f1f"
 
 WITH_FUSED_OPS=1
 if [ "${1:-}" = "--no-fused-ops" ]; then
@@ -23,7 +23,18 @@ if [ ! -d "${CLONE}/.git" ]; then
     git clone "${REPO_URL}" "${CLONE}"
     git -C "${CLONE}" checkout --quiet "${FIREANTS_REV}"
 else
-    echo ">> FireANTs clone already present at ${CLONE} (skipping clone)"
+    echo ">> FireANTs clone already present at ${CLONE}"
+    CURRENT_REV="$(git -C "${CLONE}" rev-parse HEAD)"
+    if [ "${CURRENT_REV}" != "${FIREANTS_REV}" ]; then
+        if [ -n "$(git -C "${CLONE}" status --porcelain)" ]; then
+            echo "!! It is at ${CURRENT_REV}, not the pinned revision, and has local changes."
+            echo "!! Commit or stash them and re-run, or check out ${FIREANTS_REV} by hand."
+            exit 1
+        fi
+        echo ">> Updating it to the pinned ${FIREANTS_REV}"
+        git -C "${CLONE}" fetch --quiet origin
+        git -C "${CLONE}" checkout --quiet "${FIREANTS_REV}"
+    fi
 fi
 
 # --no-deps keeps the environment's PyTorch build.

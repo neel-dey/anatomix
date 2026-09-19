@@ -105,6 +105,23 @@ def _compose_grids(grid_old, grid_residual):
     return composed.permute(0, 2, 3, 4, 1)
 
 
+def _init_images_on(images, device, geometry_only):
+    """Put the images the initialization reads on the transform's device.
+
+    With ``--assemble-feats-on-cpu`` the feature channels are in host memory, while
+    the geometry matrices are not, and MomentsRegistration needs them together.
+    Image centers come from the geometry alone, so one channel is enough there.
+    """
+    arrays = images()
+    if geometry_only:
+        arrays = arrays[:, :1]
+    arrays = arrays.to(device)
+    if arrays is images():
+        return images
+    # FakeBatchedImages reads its geometry off a real BatchedImages, so wrap that one.
+    return FakeBatchedImages(arrays, getattr(images, "batched_images", images))
+
+
 def _initial_matrix(
     fixed_images, moving_images, initialization, init_images, initial_transform,
     verbose, device,
@@ -128,6 +145,8 @@ def _initial_matrix(
             f"initialization={initialization!r} requires init_images (the "
             "intensity images the moments are computed from)."
         )
+    init_images = tuple(
+        _init_images_on(images, device, image_centers) for images in init_images)
     if verbose:
         print(f"  [init] {initialization}", flush=True)
     moments = MomentsRegistration(
