@@ -216,11 +216,16 @@ after a warm-up run:
 
 | Options | Peak per GPU | Time | Dice |
 |---|---|---|---|
+| `--loss-channel-chunk 1` | 8.2 GB | 51 s | 0.857121 |
+| `--loss-channel-chunk 2` | 8.2 GB | 29 s | 0.857180 |
 | default (`--loss-channel-chunk 8`) | 8.2 GB | 23 s | 0.857180 |
 | `--loss-channel-chunk 16` | 10.5 GB | 23 s | 0.857180 |
 | `--loss-channel-chunk none` | 24.0 GB | 27 s | 0.857180 |
 | `--assemble-feats-on-cpu` | 6.6 GB | 28 s | 0.857180 |
 | `--device cuda:0,cuda:1` | 8.2 GB, 3.5 GB | 22 s | 0.857443 |
+
+Below a chunk of 8 the loss is no longer the largest term, so smaller chunks
+cost time without saving memory.
 
 None of these change the objective, but a `masked_*` loss is a ratio, so the
 chunks accumulate a numerator and a denominator and divide once: results agree
