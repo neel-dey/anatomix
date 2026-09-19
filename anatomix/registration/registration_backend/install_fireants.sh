@@ -10,8 +10,9 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLONE="${HERE}/fireants"
 REPO_URL="https://github.com/neel-dey/FireANTs"
-# Pinned fork revision. An existing clone is moved to it unless it has local changes.
-FIREANTS_REV="171f1527ea97e87661e60a09958e38a2e8d2d269"
+# The fork's default branch, which now carries the multi-GPU work. An existing
+# clone is fast-forwarded to it unless it has local changes.
+FIREANTS_REF="main"
 
 WITH_FUSED_OPS=1
 if [ "${1:-}" = "--no-fused-ops" ]; then
@@ -20,21 +21,20 @@ fi
 
 if [ ! -d "${CLONE}/.git" ]; then
     echo ">> Cloning FireANTs into ${CLONE}"
-    git clone "${REPO_URL}" "${CLONE}"
-    git -C "${CLONE}" checkout --quiet "${FIREANTS_REV}"
-else
+    git clone --branch "${FIREANTS_REF}" "${REPO_URL}" "${CLONE}"
+elif ! git -C "${CLONE}" fetch --quiet origin "${FIREANTS_REF}"; then
     echo ">> FireANTs clone already present at ${CLONE}"
-    CURRENT_REV="$(git -C "${CLONE}" rev-parse HEAD)"
-    if [ "${CURRENT_REV}" != "${FIREANTS_REV}" ]; then
-        if [ -n "$(git -C "${CLONE}" status --porcelain)" ]; then
-            echo "!! It is at ${CURRENT_REV}, not the pinned revision, and has local changes."
-            echo "!! Commit or stash them and re-run, or check out ${FIREANTS_REV} by hand."
-            exit 1
-        fi
-        echo ">> Updating it to the pinned ${FIREANTS_REV}"
-        git -C "${CLONE}" fetch --quiet origin
-        git -C "${CLONE}" checkout --quiet "${FIREANTS_REV}"
-    fi
+    echo "!! Could not reach ${REPO_URL}; leaving it at its current revision."
+elif [ "$(git -C "${CLONE}" rev-parse HEAD)" = "$(git -C "${CLONE}" rev-parse FETCH_HEAD)" ]; then
+    echo ">> FireANTs clone already present at ${CLONE} and up to date"
+elif [ -n "$(git -C "${CLONE}" status --porcelain)" ]; then
+    echo "!! ${CLONE} is behind origin/${FIREANTS_REF} and has local changes."
+    echo "!! Commit or stash them and re-run, or update it by hand."
+    exit 1
+else
+    echo ">> Updating ${CLONE} to origin/${FIREANTS_REF}"
+    git -C "${CLONE}" checkout --quiet "${FIREANTS_REF}"
+    git -C "${CLONE}" merge --quiet --ff-only FETCH_HEAD
 fi
 
 # --no-deps keeps the environment's PyTorch build.
