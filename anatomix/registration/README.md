@@ -199,8 +199,8 @@ The loss is therefore chunked by default: every stage evaluates it
 `--loss-channel-chunk` feature channels at a time and accumulates the gradient,
 for the same objective and the same gradient up to summation order. The loss
 memory scales with the chunk instead of the channel count. Pass
-`--loss-channel-chunk none` to evaluate every channel at once. Only local
-losses can be chunked, so `mi` stages and `--device cpu` ignore it.
+`--loss-channel-chunk none` to evaluate every channel at once. Rigid and affine
+`mi` stages and `--device cpu` ignore it.
 
 Two more options reduce memory further, and neither changes what is optimized:
 
@@ -242,14 +242,18 @@ two-GPU row differs in the sixth digit for the identity-start reason above. An
 affine + deformable run on a 240×240×155 BraTS-Reg pair needs 15 GB by default
 and 38 GB with `--loss-channel-chunk none`.
 
-Rigid and affine stages run on the first GPU and load both feature volumes
-there. For volumes that do not fit, register fewer channels (`--features
-anatomix` or `intensity`) or pass a linear transform computed elsewhere with
-`--initial-transform`. `mi` stages currently ignore `--loss-channel-chunk` and
-run on one GPU. Both are limits of this backend, not of the metric: mutual
-information is global over space, so a sharded stage has to reduce the joint
-histogram across slabs rather than a per-voxel loss, and the chunking helper
-expects a per-voxel loss map.
+Rigid and affine stages run on the first GPU. They load both feature volumes
+there unless `--assemble-feats-on-cpu` is set and their loss is chunked, in
+which case the volumes stay in host memory and only the channel chunk being
+worked on is on the GPU. For volumes that still do not fit, register fewer
+channels (`--features anatomix` or `intensity`) or pass a linear transform
+computed elsewhere with `--initial-transform`.
+
+Deformable `mi` stages shard and chunk like any other. Mutual information is
+global over space, so the sharded backend reduces the intensity range and the
+joint histogram across slabs rather than a per-voxel loss, which reproduces the
+single-GPU value. Rigid and affine `mi` stages still take every channel at
+once, because the linear chunking helper expects a per-voxel loss map.
 </details>
 
 ## Examples
@@ -360,8 +364,8 @@ python anatomix-register.py --registration-pairs-csv pairs.csv \
 
 **Large volumes on small GPUs.** The deformable stage runs at full resolution,
 split over two GPUs, and the feature volumes are assembled in host memory with
-a sliding-window batch of 1. The rigid stage runs on the first GPU and loads
-both feature volumes there. Both stages chunk their loss, which is the default:
+a sliding-window batch of 1. The rigid stage runs on the first GPU and reads
+them from host memory too. Both stages chunk their loss, which is the default:
 
 ```bash
 python anatomix-register.py --fixed fixed.nii.gz --moving moving.nii.gz \

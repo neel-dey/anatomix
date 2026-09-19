@@ -182,8 +182,10 @@ def run_registration(
         # Chunking is a GPU memory optimization; --device auto may have resolved to the CPU.
         channel_chunk = stage.get("channel_chunk") if device.type == "cuda" else None
         sharded = channel_chunk is not None or several_devices
-        # Only the sharded deformable stage reads its images from host memory.
-        on_device = None if (kind == "deformable" and sharded) else device
+        # A sharded deformable stage and a chunked linear stage read their images from
+        # host memory, a channel chunk at a time; every other stage needs them on the GPU.
+        host_resident = sharded if kind == "deformable" else channel_chunk is not None
+        on_device = None if host_resident else device
         f_imgs = _stage_images(fixed_images, has_mask_channel, stage_masked, on_device)
         if verbose:
             print(

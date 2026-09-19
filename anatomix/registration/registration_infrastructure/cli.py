@@ -276,8 +276,8 @@ def build_parser():
         "GPU: the network and MIND-SSC still run on the GPU, one batch of "
         "sliding windows or one slab at a time, but the volume they fill "
         "lives on the CPU. Slower; results agree with the default up to "
-        "floating-point rounding. Linear stages still load both feature "
-        "volumes on the first device.",
+        "floating-point rounding. Rigid and affine stages read the volumes "
+        "from there a channel chunk at a time when their loss is chunked.",
     )
     misc.add_argument(
         "--loss-channel-chunk", type=parse_channel_chunk,
@@ -285,8 +285,8 @@ def build_parser():
         help="Evaluate the loss of every stage N feature channels at a time "
         "instead of all at once, for the same objective and gradient with "
         f"less GPU memory (default {DEFAULT_LOSS_CHANNEL_CHUNK}). Pass 'none' "
-        "to evaluate every channel at once. mi stages and --device cpu ignore "
-        "it.",
+        "to evaluate every channel at once. Rigid and affine mi stages and "
+        "--device cpu ignore it.",
     )
     misc.add_argument(
         "--device", default="auto",
@@ -548,7 +548,7 @@ def build_stages(args):
             "smooth_grad": grad_sigmas[i], "smooth_warp": warp_sigmas[i],
             "tolerance": args.tolerance,
             "channel_chunk": stage_channel_chunk(
-                args.loss_channel_chunk, losses[i], args.device
+                args.loss_channel_chunk, kinds[i], losses[i], args.device
             ),
         }
         for i in range(n)
@@ -1046,27 +1046,15 @@ def validate_device(spec):
     )
 
 
-def validate_sharding(args, stages):
-    """Splitting a deformable stage over several devices needs a local loss.
-
-    Channel chunking is a default, so stages that cannot be chunked (mi, and
-    anything on the CPU) drop it instead of failing; see ``stage_channel_chunk``."""
-    if "," not in args.device:
-        return
-    for stage in stages:
-        if (stage["loss"] or "").endswith("mi") and stage["kind"] == "deformable":
-            raise ValueError(
-                "Mutual information is a global loss: deformable mi stages run on "
-                "one device."
-            )
-
-
-def stage_channel_chunk(chunk, loss, device_spec):
+def stage_channel_chunk(chunk, kind, loss, device_spec):
     """``--loss-channel-chunk`` for one stage, or None where it does not apply.
 
-    Only local losses can be chunked, and it saves GPU memory, so mi stages and
-    CPU runs evaluate every channel at once."""
-    if chunk is None or device_spec == "cpu" or (loss or "").endswith("mi"):
+    Chunking saves GPU memory, so a CPU run takes every channel at once. A rigid or
+    affine stage also needs a per-voxel loss; a deformable stage goes through the
+    sharded backend, which sums mi's histograms instead."""
+    if chunk is None or device_spec == "cpu":
+        return None
+    if kind != "deformable" and (loss or "").endswith("mi"):
         return None
     return chunk
 
@@ -1091,7 +1079,6 @@ def prepare(args):
         args.unet_kwargs = args.vit_kwargs = None
     stages = build_stages(args)
     validate_device(args.device)
-    validate_sharding(args, stages)
     pairs, input_columns = resolve_inputs(args)
     geometries = validate_volumes(pairs)
     validate_pairs(pairs, stages)
