@@ -95,7 +95,7 @@ Outputs
 Run control
   --device auto|cpu|cuda|cuda:N        auto picks the visible GPU with the most free memory.
   --device cuda:N,cuda:M               Split the deformable stages over several GPUs (see GPU memory).
-  --loss-channel-chunk N               Evaluate the loss of every stage N feature channels at a time; same result, less GPU memory.
+  --loss-channel-chunk N               Evaluate the loss of every stage N feature channels at a time; same objective, less GPU memory.
   --low-memory                         Keep the feature volumes in host memory and compute them in pieces.
   --gradient-checkpointing             Recompute the cross-correlation intermediates in the backward pass; less GPU memory.
   --seed N                             Random seed (default 12345).
@@ -172,9 +172,10 @@ stage needs at least 34 voxels along every axis of both images.
 <details>
 <summary><b>Features</b></summary>
 
-`anatomix+mindssc` concatenates 32 network channels and 12 MIND-SSC channels;
-`anatomix` and `mindssc` use one family; `intensity` registers the clipped,
-min-max normalized image itself and loads no network. Network weights download
+`anatomix+mindssc` concatenates the backbone's network channels (32 for
+`anatomix-dev-vit` and `anatomix-dev`, 16 for `anatomix`) and 12 MIND-SSC
+channels; `anatomix` and `mindssc` use one family; `intensity` registers the
+clipped, min-max normalized image itself and loads no network. Weights download
 from Hugging Face on first use. Features are extracted on an isotropic grid at
 the finest spacing and resampled back; `--isotropic-features 0` extracts on
 the native grid instead. `anatomix-dev-vit` requires a 128-voxel window.
@@ -192,23 +193,31 @@ squared error. The `masked_` variants restrict the loss to the mask overlap.
 <summary><b>GPU memory</b></summary>
 
 Memory grows with the number of fixed-grid voxels times the number of
-channels (45 for `anatomix+mindssc` with a mask), and most of it is the
-cross-correlation loss. Three options reduce it without changing what is
-optimized:
+channels (45 for `anatomix+mindssc` with a mask, at the default backbone), and
+most of it is the cross-correlation loss. Three options reduce it without
+changing what is optimized:
 
 - `--loss-channel-chunk N` evaluates the loss of every stage `N` feature
-  channels at a time and accumulates the gradient. The result is the same; the
-  loss memory scales with `N` instead of the channel count. It works on one GPU.
+  channels at a time and accumulates the gradient. It computes the same
+  objective and the same gradient, up to summation order, while the loss memory
+  scales with `N` instead of the channel count. It works on one GPU.
 - `--device cuda:0,cuda:1` cuts the fixed grid of every deformable stage into
   slabs along its longest axis, one per GPU. The slabs exchange the borders
-  that the loss windows, the smoothing and the warp composition need, so the
-  optimization follows the single-GPU one up to floating-point rounding.
+  that the loss windows, the smoothing and the warp composition need, so every
+  iteration computes what the single-GPU run computes, up to summation order.
+  The final field can still differ by a fraction of a voxel, because a
+  deformable stage starts from an exact identity warp, where every sample sits
+  on a voxel corner and the one-sided interpolation gradient is decided by
+  coordinate rounding, which differs between a slab and the full grid; metrics
+  are unaffected (mean Dice within 0.0001 on the eight pairs below).
   Everything else (features, linear stages, outputs) runs on the first GPU.
   Borders travel through pinned host memory, because direct GPU-to-GPU copies
   silently corrupt data on some PCIe hosts.
-- `--low-memory` keeps the feature volumes in host memory and computes them in
-  pieces, so a GPU holds the network windows, one MIND-SSC slab, or its share
-  of a deformable stage. Combine it with a sliding-window batch of 1
+- `--low-memory` builds the feature volumes in pieces and assembles them in host
+  memory. The network and MIND-SSC still run on the GPU; what moves to the host
+  is the buffer they fill, so the GPU holds the single-channel image plus one
+  batch of sliding windows or one MIND-SSC slab, never a whole feature volume.
+  Combine it with a sliding-window batch of 1
   (`--sliding-window-params 128,1,0.8,gaussian,0.25`).
 
 Peak GPU memory of one 192×160×192 AbdomenMRCT pair with the settings of the
