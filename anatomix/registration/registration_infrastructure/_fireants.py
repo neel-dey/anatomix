@@ -27,6 +27,12 @@ except ImportError as exc:
         f"(underlying import error: {exc})"
     ) from exc
 
+# Multi-GPU / channel-chunked deformable stages; absent from older FireANTs revisions.
+try:
+    from fireants.registration.shardedgreedy import ShardedGreedyRegistration
+except ImportError:
+    ShardedGreedyRegistration = None
+
 __all__ = [
     "Image",
     "BatchedImages",
@@ -36,6 +42,7 @@ __all__ = [
     "RigidRegistration",
     "AffineRegistration",
     "GreedyRegistration",
+    "ShardedGreedyRegistration",
     "DeformableMixin",
     "FFO_AVAILABLE",
     "torch_grid_sampler_3d",

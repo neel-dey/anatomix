@@ -17,11 +17,43 @@ def pdist_squared(x):
     return dist
 
 
+_CHANNEL_ORDER = [6, 8, 1, 11, 2, 10, 0, 7, 9, 4, 5, 3]  # the reference C++ descriptor ordering
+
+
 def MINDSSC(img, radius=1, dilation=2):
     """Return 12-channel MIND-SSC on the input tensor's device and dtype.
 
     Input shape is (1,1,Z,Y,X); radius controls patch size and dilation the
     neighbourhood offsets."""
+    mind = _patch_distances(img, radius, dilation)
+    return _normalize_distances(mind, torch.mean(mind, 1, keepdim=True).mean().item())
+
+
+def MINDSSC_tiled(img, radius=1, dilation=2, tile=64, out_device="cpu"):
+    """MIND-SSC computed in slabs of ``tile`` slices along z, collected on ``out_device``.
+
+    Slabs overlap by the descriptor's reach, so the patch distances equal those
+    of :func:`MINDSSC`; the volume-wide mean variance is gathered in a first pass."""
+    reach = radius + dilation
+    depth = img.shape[2]
+    out = torch.empty((1, 12) + tuple(img.shape[2:]), dtype=img.dtype, device=out_device)
+    variance_sum, slabs = 0.0, []
+    for z0 in range(0, depth, tile):
+        z1 = min(z0 + tile, depth)
+        lo, hi = max(z0 - reach, 0), min(z1 + reach, depth)
+        mind = _patch_distances(img[:, :, lo:hi], radius, dilation)[:, :, z0 - lo:z0 - lo + (z1 - z0)]
+        variance_sum += torch.mean(mind, 1, keepdim=True).sum(dtype=torch.float64).item()
+        out[:, :, z0:z1] = mind.to(out_device)
+        slabs.append((z0, z1))
+    variance_mean = variance_sum / (depth * img.shape[3] * img.shape[4])
+    for z0, z1 in slabs:
+        out[:, :, z0:z1] = _normalize_distances(
+            out[:, :, z0:z1].to(img.device), variance_mean).to(out_device)
+    return out
+
+
+def _patch_distances(img, radius, dilation):
+    """Patch distances to the twelve neighbour pairs, minus their per-voxel minimum."""
     device = img.device
     dtype = img.dtype
 
@@ -86,24 +118,13 @@ def MINDSSC(img, radius=1, dilation=2):
         stride=1,
     )
 
-    # MIND equation with per-voxel variance normalization.
-    mind = ssd - torch.min(ssd, 1, keepdim=True)[0]
+    return ssd - torch.min(ssd, 1, keepdim=True)[0]
+
+
+def _normalize_distances(mind, variance_mean):
+    """The MIND equation: per-voxel variance normalization, clamped around the volume mean."""
     mind_var = torch.mean(mind, 1, keepdim=True)
-    mind_var = torch.clamp(
-        mind_var,
-        mind_var.mean().item() * 0.001,
-        mind_var.mean().item() * 1000,
-    )
+    mind_var = torch.clamp(mind_var, variance_mean * 0.001, variance_mean * 1000)
     mind /= mind_var
     mind = torch.exp(-mind)
-
-    # Permute channels to match the reference C++ descriptor ordering.
-    mind = mind[
-        :,
-        torch.tensor(
-            [6, 8, 1, 11, 2, 10, 0, 7, 9, 4, 5, 3], device=device,
-        ).long(),
-        :, :, :,
-    ]
-
-    return mind
+    return mind[:, torch.tensor(_CHANNEL_ORDER, device=mind.device).long(), :, :, :]

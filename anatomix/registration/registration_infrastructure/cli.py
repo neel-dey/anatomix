@@ -259,9 +259,24 @@ def build_parser():
         "(cc and masked_cc stages only).",
     )
     misc.add_argument(
+        "--low-memory", action=argparse.BooleanOptionalAction, default=False,
+        help="Keep the feature volumes in host memory and compute them in "
+        "pieces, so that a GPU holds only what its current step needs. "
+        "Slower; results agree with the default up to floating-point rounding. "
+        "Linear stages still load both feature volumes on the first device.",
+    )
+    misc.add_argument(
+        "--loss-channel-chunk", type=int, default=None, metavar="N",
+        help="Evaluate the loss of deformable stages N feature channels at a "
+        "time instead of all at once. Same result, less GPU memory, more time "
+        "(cc, mse and their masked variants).",
+    )
+    misc.add_argument(
         "--device", default="auto",
         help="Compute device: 'auto' (pick the visible CUDA device with the "
-        "most free memory), 'cpu', 'cuda', or 'cuda:N'. Honors "
+        "most free memory), 'cpu', 'cuda', or 'cuda:N'. A comma-separated "
+        "list such as 'cuda:0,cuda:1' splits the deformable stages over "
+        "several GPUs; everything else runs on the first one. Honors "
         "CUDA_VISIBLE_DEVICES, which also restricts 'auto'. Note that N is a "
         "CUDA index, which matches nvidia-smi's only when "
         "CUDA_DEVICE_ORDER=PCI_BUS_ID is set.",
@@ -998,14 +1013,34 @@ def validate_pairs(pairs, stages):
 
 
 def validate_device(spec):
-    """Validate the ``--device`` string (resolved to a torch device later)."""
+    """Validate the ``--device`` string (resolved to torch devices later)."""
     if spec in ("auto", "cpu", "cuda"):
         return
-    if spec.startswith("cuda:") and spec[5:].isdigit():
+    names = [name.strip() for name in spec.split(",")]
+    if all(name.startswith("cuda:") and name[5:].isdigit() for name in names):
+        if len(set(names)) != len(names):
+            raise ValueError(f"--device: {spec!r} lists a device twice.")
         return
     raise ValueError(
-        f"--device: expected 'auto', 'cpu', 'cuda', or 'cuda:N', got {spec!r}."
+        "--device: expected 'auto', 'cpu', 'cuda', 'cuda:N', or a list "
+        f"'cuda:N,cuda:M', got {spec!r}."
     )
+
+
+def validate_sharding(args, stages):
+    """Several devices or a channel chunk need a local loss in every deformable stage."""
+    if args.loss_channel_chunk is not None and args.loss_channel_chunk < 1:
+        raise ValueError("--loss-channel-chunk: expected a positive integer.")
+    if "," not in args.device and args.loss_channel_chunk is None:
+        return
+    if args.device == "cpu":
+        raise ValueError("--loss-channel-chunk needs a CUDA device.")
+    for stage in stages:
+        if stage["kind"] == "deformable" and (stage["loss"] or "").endswith("mi"):
+            raise ValueError(
+                "Mutual information is a global loss: deformable mi stages run on "
+                "one device and without --loss-channel-chunk."
+            )
 
 
 def prepare(args):
@@ -1028,6 +1063,7 @@ def prepare(args):
         args.unet_kwargs = args.vit_kwargs = None
     stages = build_stages(args)
     validate_device(args.device)
+    validate_sharding(args, stages)
     pairs, input_columns = resolve_inputs(args)
     geometries = validate_volumes(pairs)
     validate_pairs(pairs, stages)

@@ -17,6 +17,7 @@ from ._fireants import (
     GreedyRegistration,
     MomentsRegistration,
     RigidRegistration,
+    ShardedGreedyRegistration,
 )
 
 # Registration objects hold residuals; linear_matrix holds the cumulative map.
@@ -72,11 +73,16 @@ def _common_kwargs(stage, fixed_images, moving_images, verbose):
     return kwargs
 
 
-def _stage_images(images, has_mask_channel, stage_masked):
-    """Remove the appended mask channel for stages using an unmasked loss."""
+def _stage_images(images, has_mask_channel, stage_masked, device=None):
+    """Remove the appended mask channel for stages using an unmasked loss.
+
+    ``device`` moves host-resident channels there, for stages that need them on one GPU."""
+    arrays = images()
     if has_mask_channel and not stage_masked:
-        return FakeBatchedImages(images()[:, :-1], images)
-    return images
+        arrays = arrays[:, :-1]
+    if device is not None and arrays.device != device:
+        arrays = arrays.to(device)
+    return images if arrays is images() else FakeBatchedImages(arrays, images)
 
 
 def _compose_linear_grid(matrix, grid_residual, fixed_images, moving_images):
@@ -102,7 +108,7 @@ def _compose_grids(grid_old, grid_residual):
 
 def _initial_matrix(
     fixed_images, moving_images, initialization, init_images, initial_transform,
-    verbose,
+    verbose, device,
 ):
     """Physical fixed-to-moving (N,4,4) matrix applied before the first stage."""
     if initialization not in ("none", "image-centers", "center-of-mass", "moments"):
@@ -111,9 +117,8 @@ def _initial_matrix(
         if initialization != "none":
             raise ValueError(
                 "initial_transform cannot be combined with an initialization.")
-        return initial_transform.to(
-            device=fixed_images.device, dtype=torch.float32).detach()
-    eye = torch.eye(4, device=fixed_images.device)[None]
+        return initial_transform.to(device=device, dtype=torch.float32).detach()
+    eye = torch.eye(4, device=device)[None]
     if initialization == "none":
         return eye
     image_centers = initialization == "image-centers"
@@ -140,7 +145,7 @@ def _initial_matrix(
 def run_registration(
     fixed_images, moving_images, stages, initialization="none", verbose=False,
     reextract_moving=None, has_mask_channel=False, init_images=None,
-    initial_transform=None,
+    initial_transform=None, devices=None, channel_chunk=None,
 ):
     """Run stages and return cumulative transforms.
 
@@ -149,16 +154,21 @@ def run_registration(
     ``init_images`` supplies non-negative intensity batches for moment initialization;
     ``initial_transform`` is a physical fixed-to-moving (N,4,4) matrix instead.
     ``reextract_moving(grid)`` must return the moving features on the fixed geometry
-    for a given cumulative grid. Set ``has_mask_channel`` when the last channel is a mask."""
+    for a given cumulative grid. Set ``has_mask_channel`` when the last channel is a mask.
+    Deformable stages are split over ``devices`` when there are several, and evaluate
+    their loss ``channel_chunk`` channels at a time when it is set."""
     if reextract_moving is None:
         raise ValueError("run_registration requires a reextract_moving callback.")
     stage_results = []
     snapshots = []
+    # Where transforms are composed; the feature channels may be in host memory.
+    device = fixed_images.get_torch2phy().device
+    sharded = channel_chunk is not None or (devices is not None and len(devices) > 1)
 
     # Cumulative physical matrix, valid until the first deformable stage.
     cum_linear = _initial_matrix(
         fixed_images, moving_images, initialization, init_images,
-        initial_transform, verbose,
+        initial_transform, verbose, device,
     )
     warped_coordinates = _linear_grid(cum_linear, fixed_images, moving_images)
     if initialization != "none" or initial_transform is not None:
@@ -170,7 +180,9 @@ def run_registration(
         kind = stage["kind"]
         label = f"{index}-{kind}"
         stage_masked = stage["loss"].startswith("masked_")
-        f_imgs = _stage_images(fixed_images, has_mask_channel, stage_masked)
+        # Only the sharded deformable stage reads its images from host memory.
+        on_device = None if (kind == "deformable" and sharded) else device
+        f_imgs = _stage_images(fixed_images, has_mask_channel, stage_masked, on_device)
         if verbose:
             print(
                 f"  [stage {index}] {kind}: loss={stage['loss']} "
@@ -180,6 +192,7 @@ def run_registration(
             )
         m_imgs = _stage_images(
             reextract_moving(warped_coordinates), has_mask_channel, stage_masked,
+            on_device,
         )
         common = _common_kwargs(stage, f_imgs, m_imgs, verbose)
 
@@ -211,7 +224,16 @@ def run_registration(
             common["deformation_type"] = "compositive"
             common["smooth_grad_sigma"] = stage["smooth_grad"]
             common["smooth_warp_sigma"] = stage["smooth_warp"]
-            reg = GreedyRegistration(**common)
+            if sharded:
+                if ShardedGreedyRegistration is None:
+                    raise RuntimeError(
+                        "Update the FireANTs fork (registration_backend/install_fireants.sh) "
+                        "for several devices and --loss-channel-chunk."
+                    )
+                reg = ShardedGreedyRegistration(
+                    devices=devices or [device], channel_chunk=channel_chunk, **common)
+            else:
+                reg = GreedyRegistration(**common)
             reg.optimize()
             residual = reg.get_warped_coordinates(f_imgs, m_imgs).detach()
             # A linear prefix composes exactly; a dense one is resampled.
