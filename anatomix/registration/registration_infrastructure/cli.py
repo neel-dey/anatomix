@@ -285,8 +285,8 @@ def build_parser():
         help="Evaluate the loss of every stage N feature channels at a time "
         "instead of all at once, for the same objective and gradient with "
         f"less GPU memory (default {DEFAULT_LOSS_CHANNEL_CHUNK}). Pass 'none' "
-        "to evaluate every channel at once. Only local losses can be chunked, "
-        "so mi stages ignore it, as does --device cpu.",
+        "to evaluate every channel at once. mi stages and --device cpu ignore "
+        "it.",
     )
     misc.add_argument(
         "--device", default="auto",

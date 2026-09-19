@@ -245,8 +245,11 @@ and 38 GB with `--loss-channel-chunk none`.
 Rigid and affine stages run on the first GPU and load both feature volumes
 there. For volumes that do not fit, register fewer channels (`--features
 anatomix` or `intensity`) or pass a linear transform computed elsewhere with
-`--initial-transform`. Mutual information is a global loss: `mi` stages ignore
-`--loss-channel-chunk`, and deformable `mi` stages run on one GPU.
+`--initial-transform`. `mi` stages currently ignore `--loss-channel-chunk` and
+run on one GPU. Both are limits of this backend, not of the metric: mutual
+information is global over space, so a sharded stage has to reduce the joint
+histogram across slabs rather than a per-voxel loss, and the chunking helper
+expects a per-voxel loss map.
 </details>
 
 ## Examples
