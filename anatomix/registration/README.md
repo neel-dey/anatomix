@@ -237,8 +237,11 @@ example below:
 | `--assemble-feats-on-cpu` | 6.5 GB | 0.856832 |
 | `--device cuda:0,cuda:1` | 8.2 GB, 3.5 GB | 0.856844 |
 
-Chunking costs about 10% more time and leaves the result bit-identical; the
-two-GPU row differs in the sixth digit for the identity-start reason above. An
+Chunking costs about 10% more time and leaves a deformable stage bit-identical;
+the two-GPU row differs in the sixth digit for the identity-start reason above.
+A rigid or affine stage accumulates a ratio rather than a sum, so its chunked
+result is equal only up to rounding: on the affine + deformable BraTS-Reg
+example below, chunking moves the median landmark error by 0.003 mm. An
 affine + deformable run on a 240×240×155 BraTS-Reg pair needs 15 GB by default
 and 38 GB with `--loss-channel-chunk none`.
 
