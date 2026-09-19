@@ -266,6 +266,11 @@ def build_parser():
     )
 
     misc = parser.add_argument_group("misc")
+    misc.add_argument(
+        "--fused-ops", choices=("on", "off"), default="off",
+        help="FireANTs' compiled CUDA kernels (default off). They are faster, but "
+        "the fused interpolator shifts the result slightly, so a run reproduces "
+        "across machines only when they are off.")
     misc.add_argument("--seed", type=int, default=12345, help="Random seed.")
     misc.add_argument("--tolerance", type=float, default=1e-6,
                       help="FireANTs convergence tolerance (loss slope over the last 10 iterations); use inf to disable early stopping.")

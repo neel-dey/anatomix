@@ -17,6 +17,12 @@ the outputs. The modules it uses live in ``registration_infrastructure/``:
     metrics.py    Dice, landmark error, fold count
     pipeline.py   the helpers called below
 """
+import sys
+
+# Reads --fused-ops and must run before anything imports FireANTs.
+from anatomix.registration.registration_infrastructure.fused_ops import configure
+configure(sys.argv[1:])
+
 import torch
 
 from anatomix.registration.registration_infrastructure import cli, pipeline
@@ -128,7 +134,7 @@ def main(argv=None):
         parser.error(str(error))
 
     pipeline.seed_everything(args.seed)
-    pipeline.warn_if_no_fused_ops()
+    pipeline.warn_if_no_fused_ops(args.fused_ops)
     devices = pipeline.select_devices(args.device)
     device = devices[0]
     if args.verbose:

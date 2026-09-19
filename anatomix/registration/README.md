@@ -25,8 +25,8 @@ bash registration_backend/install_fireants.sh   # add --no-fused-ops to skip the
 This clones and installs a [minimally modified fork](https://github.com/neel-dey/FireANTs)
 of the FireANTs registration library into `registration_backend/fireants/`
 (gitignored) and builds its CUDA kernels, which need a CUDA toolkit matching
-your PyTorch build. Without the kernels FireANTs uses its slower pure-PyTorch
-code.
+your PyTorch build. The kernels are only used when you ask for them with
+`--fused-ops on`; see Reproducibility.
 
 ## Usage
 
@@ -97,6 +97,7 @@ Run control
   --device cuda:N,cuda:M               Split the deformable stages over several GPUs (see GPU memory).
   --loss-channel-chunk N|none          Feature channels per loss evaluation (default 8); none evaluates every channel at once.
   --assemble-feats-on-cpu              Assemble the feature volumes in host memory instead of on the GPU.
+  --fused-ops on|off                   FireANTs' compiled CUDA kernels (default off; see Reproducibility).
   --seed N                             Random seed (default 12345).
   --verbose / --no-verbose             Print inputs, stage progress, metrics and peak GPU memory.
 ```
@@ -211,8 +212,9 @@ Two more options reduce memory further, and neither changes what is optimized:
   The final field can still differ by a fraction of a voxel, because a
   deformable stage starts from an exact identity warp, where every sample sits
   on a voxel corner and the one-sided interpolation gradient is decided by
-  coordinate rounding, which differs between a slab and the full grid; metrics
-  are unaffected (mean Dice within 0.0001 on the eight pairs below).
+  coordinate rounding, which differs between a slab and the full grid. On the
+  eight pairs below that moves the mean Dice by 0.0003 and the worst pair by
+  0.0016.
   Everything else (features, linear stages, outputs) runs on the first GPU.
   Borders travel through pinned host memory, because direct GPU-to-GPU copies
   silently corrupt data on some PCIe hosts.
@@ -231,19 +233,19 @@ example below:
 
 | Options | Peak per GPU | Dice |
 |---|---|---|
-| default (`--loss-channel-chunk 8`) | 8.2 GB | 0.856832 |
-| `--loss-channel-chunk 16` | 10.4 GB | 0.856832 |
-| `--loss-channel-chunk none` | 23.9 GB | 0.856832 |
-| `--assemble-feats-on-cpu` | 6.5 GB | 0.856832 |
-| `--device cuda:0,cuda:1` | 8.2 GB, 3.5 GB | 0.856844 |
+| default (`--loss-channel-chunk 8`) | 8.2 GB | 0.857180 |
+| `--loss-channel-chunk 16` | 10.5 GB | 0.857180 |
+| `--loss-channel-chunk none` | 24.0 GB | 0.857180 |
+| `--assemble-feats-on-cpu` | 6.6 GB | 0.857180 |
+| `--device cuda:0,cuda:1` | 8.2 GB, 3.5 GB | 0.857443 |
 
 Chunking costs about 10% more time. A `masked_*` loss is a ratio, so the chunks
 accumulate a numerator and a denominator and divide once, which agrees with the
 unchunked loss up to rounding rather than bit for bit; the pair above happens to
 land on the same value at every chunk size. Over the eight pairs of the
-reproduction below, chunking moves the mean Dice by 0.0002 and the worst pair by
-0.0014, and on the affine + deformable BraTS-Reg example it moves the median
-landmark error by 0.003 mm. The two-GPU row differs for the identity-start
+reproduction below, chunking moves the mean Dice by 0.0004 and the worst pair by
+0.0038, and on the affine + deformable BraTS-Reg example it moves the median
+landmark error by 0.004 mm. The two-GPU row differs for the identity-start
 reason above. An affine + deformable run on a 240×240×155 BraTS-Reg pair needs
 15 GB by default and 38 GB with `--loss-channel-chunk none`.
 
@@ -259,6 +261,22 @@ global over space, so the sharded backend reduces the intensity range and the
 joint histogram across slabs rather than a per-voxel loss, which reproduces the
 single-GPU value. Rigid and affine `mi` stages still take every channel at
 once, because the linear chunking helper expects a per-voxel loss map.
+</details>
+
+<details>
+<summary><b>Reproducibility</b></summary>
+
+`install_fireants.sh` compiles FireANTs' CUDA kernels, and FireANTs uses them
+for interpolation, the Adam update and the FFT downsample whenever they import.
+The fused interpolator rounds differently from the PyTorch one, so the same
+inputs give a slightly different result on a machine where the build succeeded
+than on one where it did not: over the eight pairs below, a median of 4e-4 Dice
+and 2e-3 on the most sensitive pair, which is larger than it sounds because the
+optimizer amplifies it. `--fused-ops` is therefore `off` by default, so a run
+reproduces anywhere; it cost nothing measurable on the pair in the table above
+(23 s either way). `--fused-ops on` restores the kernels. Everything else is
+already deterministic: a repeated run is bit-identical, and the seed changes
+nothing.
 </details>
 
 ## Examples
@@ -407,6 +425,7 @@ above.
 ```bash
 python anatomix-register.py --registration-pairs-csv pairs.csv \
     --features anatomix+mindssc --backbone anatomix-dev-vit \
+    --fused-ops on \
     --transform deformable --loss masked_cc --step-size 1.0 \
     --shrink-factors 6x4x2x1 --iterations 100x100x100x100 --cc-kernel-widths 21x13x11x9 \
     --fixed-minclip -450 --fixed-maxclip 450 --moving-minclip 0 --moving-maxclip 20000 \

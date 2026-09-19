@@ -84,11 +84,12 @@ def select_device(spec):
     return device
 
 
-def warn_if_no_fused_ops():
-    if not FFO_AVAILABLE:
+def warn_if_no_fused_ops(requested):
+    """Complain only when the kernels were asked for and are not there."""
+    if requested == "on" and not FFO_AVAILABLE:
         print(
-            "[note] fireants_fused_ops is not available; FireANTs is using its "
-            "pure-PyTorch fallback. "
+            "[note] --fused-ops on, but fireants_fused_ops is not available; "
+            "FireANTs is using its pure-PyTorch fallback. "
             "Build the kernels with registration_backend/install_fireants.sh.",
             flush=True,
         )
