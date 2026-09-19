@@ -237,13 +237,15 @@ example below:
 | `--assemble-feats-on-cpu` | 6.5 GB | 0.856832 |
 | `--device cuda:0,cuda:1` | 8.2 GB, 3.5 GB | 0.856844 |
 
-Chunking costs about 10% more time and leaves a deformable stage bit-identical;
-the two-GPU row differs in the sixth digit for the identity-start reason above.
-A rigid or affine stage accumulates a ratio rather than a sum, so its chunked
-result is equal only up to rounding: on the affine + deformable BraTS-Reg
-example below, chunking moves the median landmark error by 0.003 mm. An
-affine + deformable run on a 240×240×155 BraTS-Reg pair needs 15 GB by default
-and 38 GB with `--loss-channel-chunk none`.
+Chunking costs about 10% more time. A `masked_*` loss is a ratio, so the chunks
+accumulate a numerator and a denominator and divide once, which agrees with the
+unchunked loss up to rounding rather than bit for bit; the pair above happens to
+land on the same value at every chunk size. Over the eight pairs of the
+reproduction below, chunking moves the mean Dice by 0.0002 and the worst pair by
+0.0014, and on the affine + deformable BraTS-Reg example it moves the median
+landmark error by 0.003 mm. The two-GPU row differs for the identity-start
+reason above. An affine + deformable run on a 240×240×155 BraTS-Reg pair needs
+15 GB by default and 38 GB with `--loss-channel-chunk none`.
 
 Rigid and affine stages run on the first GPU. They load both feature volumes
 there unless `--assemble-feats-on-cpu` is set and their loss is chunked, in
