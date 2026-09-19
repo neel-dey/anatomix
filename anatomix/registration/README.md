@@ -192,9 +192,9 @@ squared error. The `masked_` variants restrict the loss to the mask overlap.
 <details>
 <summary><b>GPU memory</b></summary>
 
-Memory scales with fixed-grid voxels times channels (45 for `anatomix+mindssc`
-with a mask), and most of it is the cross-correlation loss.
-
+Memory grows with fixed-grid voxels times channels (e.g., 45 for `anatomix+mindssc`
+with a mask channel added). Most memory consumed is the cross-correlation loss.
+We now have several ways to handle vRAM limitations:
 - `--loss-channel-chunk N` (default 8) evaluates the loss N channels at a time
   and accumulates the gradient, so loss memory scales with N instead of the
   channel count. `none` takes every channel at once. Rigid and affine `mi`
@@ -203,11 +203,12 @@ with a mask), and most of it is the cross-correlation loss.
   along its longest axis, exchanging the borders that the loss windows, the
   smoothing and the warp composition need. Features, linear stages and outputs
   stay on the first GPU. Borders travel through pinned host memory, because
-  direct GPU-to-GPU copies silently corrupt data on some PCIe hosts.
+  direct GPU-to-GPU copies silently corrupt data on some PCIe hosts. This is
+  supported thanks to FireANTs.
 - `--assemble-feats-on-cpu` keeps the feature volumes in host memory; the
   network and MIND-SSC still run on the GPU, one sliding-window batch or
-  MIND-SSC slab at a time. Lower the batch when feature extraction is what does
-  not fit: on a 240×240×155 volume,
+  MIND-SSC slab at a time. Lower the sliding window batch size when feature 
+  extraction is what does not fit. E.g., on a 240×240×155 volume,
   `--sliding-window-params 128,1,0.8,gaussian,0.25` peaks at 1.7 GB against
   6.2 GB at a batch of 4, for about 20% more time.
 
@@ -248,13 +249,12 @@ transform with `--initial-transform`.
 <details>
 <summary><b>Reproducibility</b></summary>
 
-FireANTs uses the CUDA kernels `install_fireants.sh` builds for interpolation,
-the Adam update and the FFT downsample, whenever `fireants_fused_ops` imports.
-The fused interpolator rounds differently from the PyTorch one, so a result
+The FireANTs backend uses the CUDA kernels `install_fireants.sh` builds for 
+interpolation, the Adam update, and the FFT downsample, whenever `fireants_fused_ops`
+imports. The fused interpolator rounds differently from the PyTorch one, so a result
 depends on whether that build succeeded: over the eight pairs below, a median of
 4e-4 Dice and 2e-3 on the worst pair. `--fused-ops` is therefore `off` by
-default; `--fused-ops on` restores the kernels. Runs are otherwise
-deterministic, and repeating one is bit-identical.
+default; `--fused-ops on` restores the kernels.
 </details>
 
 ## Examples
