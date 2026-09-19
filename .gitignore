@@ -165,3 +165,4 @@ cython_debug/
 anatomix.egg-info/
 pretraining/checkpoints/
 pretraining/backup
+anatomix/registration/multigpu-memory-notes.html
