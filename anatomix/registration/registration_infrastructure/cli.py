@@ -267,8 +267,8 @@ def build_parser():
     )
     misc.add_argument(
         "--loss-channel-chunk", type=int, default=None, metavar="N",
-        help="Evaluate the loss of deformable stages N feature channels at a "
-        "time instead of all at once. Same result, less GPU memory, more time "
+        help="Evaluate the loss of every stage N feature channels at a time "
+        "instead of all at once. Same result, less GPU memory, more time "
         "(cc, mse and their masked variants).",
     )
     misc.add_argument(
@@ -1028,7 +1028,7 @@ def validate_device(spec):
 
 
 def validate_sharding(args, stages):
-    """Several devices or a channel chunk need a local loss in every deformable stage."""
+    """Several devices need a local loss in the deformable stages, a channel chunk in all stages."""
     if args.loss_channel_chunk is not None and args.loss_channel_chunk < 1:
         raise ValueError("--loss-channel-chunk: expected a positive integer.")
     if "," not in args.device and args.loss_channel_chunk is None:
@@ -1036,10 +1036,17 @@ def validate_sharding(args, stages):
     if args.device == "cpu":
         raise ValueError("--loss-channel-chunk needs a CUDA device.")
     for stage in stages:
-        if stage["kind"] == "deformable" and (stage["loss"] or "").endswith("mi"):
+        if not (stage["loss"] or "").endswith("mi"):
+            continue
+        if args.loss_channel_chunk is not None:
+            raise ValueError(
+                "Mutual information is a global loss: mi stages cannot use "
+                "--loss-channel-chunk."
+            )
+        if stage["kind"] == "deformable":
             raise ValueError(
                 "Mutual information is a global loss: deformable mi stages run on "
-                "one device and without --loss-channel-chunk."
+                "one device."
             )
 
 

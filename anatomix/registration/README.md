@@ -95,7 +95,7 @@ Outputs
 Run control
   --device auto|cpu|cuda|cuda:N        auto picks the visible GPU with the most free memory.
   --device cuda:N,cuda:M               Split the deformable stages over several GPUs (see GPU memory).
-  --loss-channel-chunk N               Evaluate the deformable loss N feature channels at a time; same result, less GPU memory.
+  --loss-channel-chunk N               Evaluate the loss of every stage N feature channels at a time; same result, less GPU memory.
   --low-memory                         Keep the feature volumes in host memory and compute them in pieces.
   --gradient-checkpointing             Recompute the cross-correlation intermediates in the backward pass; less GPU memory.
   --seed N                             Random seed (default 12345).
@@ -193,12 +193,12 @@ squared error. The `masked_` variants restrict the loss to the mask overlap.
 
 Memory grows with the number of fixed-grid voxels times the number of
 channels (45 for `anatomix+mindssc` with a mask), and most of it is the
-cross-correlation loss of the deformable stages. Three options reduce it
-without changing what is optimized:
+cross-correlation loss. Three options reduce it without changing what is
+optimized:
 
-- `--loss-channel-chunk N` evaluates the deformable loss `N` feature channels
-  at a time and accumulates the gradient. The result is the same; the loss
-  memory scales with `N` instead of the channel count. It works on one GPU.
+- `--loss-channel-chunk N` evaluates the loss of every stage `N` feature
+  channels at a time and accumulates the gradient. The result is the same; the
+  loss memory scales with `N` instead of the channel count. It works on one GPU.
 - `--device cuda:0,cuda:1` cuts the fixed grid of every deformable stage into
   slabs along its longest axis, one per GPU. The slabs exchange the borders
   that the loss windows, the smoothing and the warp composition need, so the
@@ -222,12 +222,15 @@ example below (mean Dice over the eight pairs stays within 0.0001):
 | `--device cuda:0,cuda:1 --loss-channel-chunk 8` | 10 GB, 4 GB |
 | the same with `--low-memory` and a sliding-window batch of 1 | 4 GB, 4 GB |
 
-Rigid and affine stages still load both feature volumes on the first GPU. For
-volumes that do not fit, end their pyramid before full resolution
-(`--shrink-factors 8x4x2`), register fewer channels (`--features anatomix` or
-`intensity`), or pass a linear transform computed elsewhere with
-`--initial-transform`. Mutual information is a global loss: deformable `mi`
-stages run on one GPU and without `--loss-channel-chunk`.
+An affine + deformable run on a 240×240×155 BraTS-Reg pair drops from 38 GB
+to 15 GB on one GPU with `--loss-channel-chunk 8`.
+
+Rigid and affine stages run on the first GPU and load both feature volumes
+there. For volumes that do not fit, register fewer channels (`--features
+anatomix` or `intensity`) or pass a linear transform computed elsewhere with
+`--initial-transform`. Mutual information is a global
+loss: `mi` stages cannot use `--loss-channel-chunk`, and deformable `mi`
+stages run on one GPU.
 </details>
 
 ## Examples
@@ -338,15 +341,14 @@ python anatomix-register.py --registration-pairs-csv pairs.csv \
 
 **Large volumes on small GPUs.** The deformable stage runs at full resolution,
 split over two GPUs with its loss evaluated eight channels at a time, and the
-features stay in host memory between stages. The rigid stage stops at a
-quarter of the resolution to keep its loss small; it still loads both feature
-volumes on the first GPU:
+features stay in host memory between stages. The rigid stage runs on the first
+GPU, with the same chunked loss, and loads both feature volumes there:
 
 ```bash
 python anatomix-register.py --fixed fixed.nii.gz --moving moving.nii.gz \
     --initialization image-centers \
     --transform rigid,deformable --step-size 0.01,1.0 \
-    --shrink-factors 16x8x4,8x4x2x1 --iterations 100x100x100,100x100x100x100 \
+    --shrink-factors 8x4x2,8x4x2x1 --iterations 100x100x100,100x100x100x100 \
     --cc-kernel-widths 15x11x9,15x11x9x7 --smooth-grad-sigma na,1.0 --smooth-warp-sigma na,0.5 \
     --device cuda:0,cuda:1 --loss-channel-chunk 8 --low-memory \
     --sliding-window-params 128,1,0.8,gaussian,0.25 \

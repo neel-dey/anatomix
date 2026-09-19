@@ -11,7 +11,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLONE="${HERE}/fireants"
 REPO_URL="https://github.com/neel-dey/FireANTs"
 # Pinned fork revision. An existing clone is left as it is.
-FIREANTS_REV="c72d2ef485e8622e799deaa4bdd49dd93cee4d1b"
+FIREANTS_REV="1eedc8f6db97255ece32dd590f224e960dcd36a6"
 
 WITH_FUSED_OPS=1
 if [ "${1:-}" = "--no-fused-ops" ]; then

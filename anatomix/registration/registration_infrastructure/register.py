@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as F
 
 from ._fireants import (
+    AbstractRegistration,
     AffineRegistration,
     FakeBatchedImages,
     GreedyRegistration,
@@ -155,8 +156,8 @@ def run_registration(
     ``initial_transform`` is a physical fixed-to-moving (N,4,4) matrix instead.
     ``reextract_moving(grid)`` must return the moving features on the fixed geometry
     for a given cumulative grid. Set ``has_mask_channel`` when the last channel is a mask.
-    Deformable stages are split over ``devices`` when there are several, and evaluate
-    their loss ``channel_chunk`` channels at a time when it is set."""
+    Deformable stages are split over ``devices`` when there are several. Every stage
+    evaluates its loss ``channel_chunk`` channels at a time when it is set."""
     if reextract_moving is None:
         raise ValueError("run_registration requires a reextract_moving callback.")
     stage_results = []
@@ -205,6 +206,13 @@ def run_registration(
                 )
             common["normalize_translation"] = True
             common["translation_lr"] = stage.get("translation_step", stage["step"])
+            if channel_chunk is not None:
+                if "channel_chunk" not in inspect.signature(AbstractRegistration).parameters:
+                    raise RuntimeError(
+                        "Update the FireANTs fork (registration_backend/install_fireants.sh) "
+                        "for --loss-channel-chunk."
+                    )
+                common["channel_chunk"] = channel_chunk
             reg = solver(**common)
             reg.optimize()
             residual = (

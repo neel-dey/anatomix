@@ -12,6 +12,7 @@ try:
     from fireants.io import Image, BatchedImages
     from fireants.io.image import FakeBatchedImages
     from fireants.io.imagemask import generate_image_mask_allones
+    from fireants.registration.abstract import AbstractRegistration
     from fireants.registration.moments import MomentsRegistration
     from fireants.registration.rigid import RigidRegistration
     from fireants.registration.affine import AffineRegistration
@@ -34,6 +35,7 @@ except ImportError:
     ShardedGreedyRegistration = None
 
 __all__ = [
+    "AbstractRegistration",
     "Image",
     "BatchedImages",
     "FakeBatchedImages",
