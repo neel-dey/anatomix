@@ -215,19 +215,30 @@ We now have several ways to handle vRAM limitations:
 One 192×160×192 AbdomenMRCT pair with the settings of the example below, timed
 after a warm-up run:
 
-| Options | Peak per GPU | Time | Dice |
-|---|---|---|---|
-| `--loss-channel-chunk 1` | 8.2 GB | 51 s | 0.857121 |
-| `--loss-channel-chunk 2` | 8.2 GB | 29 s | 0.857180 |
-| default (`--loss-channel-chunk 8`) | 8.2 GB | 23 s | 0.857180 |
-| `--loss-channel-chunk 16` | 10.5 GB | 23 s | 0.857180 |
-| `--loss-channel-chunk none` | 24.0 GB | 27 s | 0.857180 |
-| `--assemble-feats-on-cpu` | 6.6 GB | 28 s | 0.857180 |
-| `--device cuda:0,cuda:1` | 8.2 GB, 3.5 GB | 22 s | 0.857443 |
+`sw batch 1` is `--sliding-window-params 128,1,0.8,gaussian,0.25`, and the `+`
+rows add to `--assemble-feats-on-cpu`. A dash means the row was not timed.
 
-Chunking stops paying at 8: the loss is down to 6.6 GB by then and the 8.2 GB
-peak is feature extraction, so smaller chunks only cost time.
-`--assemble-feats-on-cpu` lowers that floor instead.
+| Options | Peak per GPU | vs `none` | Time | Dice |
+|---|---|---|---|---|
+| `--loss-channel-chunk none` | 24.0 GB | 1.0× | 27 s | 0.857180 |
+| `--loss-channel-chunk 16` | 10.5 GB | 2.3× | 23 s | 0.857180 |
+| default (`--loss-channel-chunk 8`) | 8.2 GB | 2.9× | 23 s | 0.857180 |
+| `--loss-channel-chunk 2` | 8.2 GB | 2.9× | 29 s | 0.857180 |
+| `--loss-channel-chunk 1` | 8.2 GB | 2.9× | 51 s | 0.857121 |
+| `--device cuda:0,cuda:1` | 8.2, 3.5 GB | 2.9× | 22 s | 0.857443 |
+| `--assemble-feats-on-cpu` | 6.6 GB | 3.6× | 28 s | 0.857180 |
+| + chunk 2 | 6.5 GB | 3.7× | — | 0.857156 |
+| + sw batch 1 | 6.6 GB | 3.6× | — | 0.857181 |
+| + chunk 2 + sw batch 1 | 3.8 GB | 6.3× | 34 s | 0.857181 |
+| + chunk 1 + sw batch 1 | 3.3 GB | 7.3× | — | 0.857078 |
+| + chunk 2 + sw batch 1 + two GPUs | 2.4, 2.0 GB | 10.0× | 35 s | 0.857401 |
+
+The peak is whichever is larger, feature extraction or the loss, and they have
+separate controls: `--loss-channel-chunk` and `--device` lower the loss,
+`--assemble-feats-on-cpu` and the sliding-window batch lower extraction. Lowering
+one alone stops helping as soon as it drops below the other — which is why every
+chunk of 8 or less sits at the same 8.2 GB of feature extraction, and why chunk 2
+and a batch of 1 each save almost nothing on their own but together reach 3.8 GB.
 
 None of these change the objective, but a `masked_*` loss is a ratio, so the
 chunks accumulate a numerator and a denominator and divide once: results agree
