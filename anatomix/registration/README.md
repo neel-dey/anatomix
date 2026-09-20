@@ -25,8 +25,8 @@ bash registration_backend/install_fireants.sh   # add --no-fused-ops to skip the
 This clones and installs a [minimally modified fork](https://github.com/neel-dey/FireANTs)
 of the FireANTs registration library into `registration_backend/fireants/`
 (gitignored) and builds its CUDA kernels, which need a CUDA toolkit matching
-your PyTorch build. Without the kernels FireANTs uses its slower pure-PyTorch
-code.
+your PyTorch build. The kernels are only used when you ask for them with
+`--fused-ops on`; see Reproducibility.
 
 ## Usage
 
@@ -66,7 +66,7 @@ Transform chain
                                        (default masked_cc when a mask is given, else cc).
   --step-size A,B                      Learning rate per stage: of the deformation for a deformable stage, of the
                                        rotation (rigid) or linear part (affine) for a linear stage
-                                       (default 1.0 deformable, 0.01 rigid/affine).
+                                       (default 1.0 deformable, 0.001 rigid/affine).
   --translation-step-size A,B          Learning rate of the translation of rigid/affine stages, in units of the
                                        fixed image's physical radius; na for deformable (default = --step-size).
   --shrink-factors AxB,AxB             Pyramid per stage, strictly decreasing (default 6x4x2x1).
@@ -94,7 +94,10 @@ Outputs
 
 Run control
   --device auto|cpu|cuda|cuda:N        auto picks the visible GPU with the most free memory.
-  --gradient-checkpointing             Recompute the cross-correlation intermediates in the backward pass; less GPU memory.
+  --device cuda:N,cuda:M               Split the deformable stages over several GPUs (see GPU memory).
+  --loss-channel-chunk N|none          Feature channels per loss evaluation (default 8); none evaluates every channel at once.
+  --assemble-feats-on-cpu              Assemble the feature volumes in host memory instead of on the GPU.
+  --fused-ops on|off                   FireANTs' compiled CUDA kernels (default off; see Reproducibility).
   --seed N                             Random seed (default 12345).
   --verbose / --no-verbose             Print inputs, stage progress, metrics and peak GPU memory.
 ```
@@ -169,9 +172,10 @@ stage needs at least 34 voxels along every axis of both images.
 <details>
 <summary><b>Features</b></summary>
 
-`anatomix+mindssc` concatenates 32 network channels and 12 MIND-SSC channels;
-`anatomix` and `mindssc` use one family; `intensity` registers the clipped,
-min-max normalized image itself and loads no network. Network weights download
+`anatomix+mindssc` concatenates the backbone's network channels (32 for
+`anatomix-dev-vit` and `anatomix-dev`, 16 for `anatomix`) and 12 MIND-SSC
+channels; `anatomix` and `mindssc` use one family; `intensity` registers the
+clipped, min-max normalized image itself and loads no network. Weights download
 from Hugging Face on first use. Features are extracted on an isotropic grid at
 the finest spacing and resampled back; `--isotropic-features 0` extracts on
 the native grid instead. `anatomix-dev-vit` requires a 128-voxel window.
@@ -188,13 +192,80 @@ squared error. The `masked_` variants restrict the loss to the mask overlap.
 <details>
 <summary><b>GPU memory</b></summary>
 
-Memory grows with the number of fixed-grid voxels times the number of
-channels (45 for `anatomix+mindssc` with a mask). The 192×160×192 AbdomenMRCT
-pairs peak at 24 GB with the default settings and 19 GB with
-`--gradient-checkpointing`. To fit large volumes: use
-`--gradient-checkpointing`, stop the pyramid before full resolution
-(`--shrink-factors 8x4x2`), register fewer channels (`--features anatomix`
-or `intensity`), or resample the images to a coarser grid first.
+Memory grows with fixed-grid voxels times channels (e.g., 45 for `anatomix+mindssc`
+with a mask channel added). Most memory consumed is the cross-correlation loss.
+We now have several ways to handle vRAM limitations:
+- `--loss-channel-chunk N` (default 8) evaluates the loss N channels at a time
+  and accumulates the gradient, so loss memory scales with N instead of the
+  channel count. `none` takes every channel at once. Rigid and affine `mi`
+  stages and `--device cpu` ignore it.
+- `--device cuda:0,cuda:1` splits each deformable stage's fixed grid into slabs
+  along its longest axis, exchanging the borders that the loss windows, the
+  smoothing and the warp composition need. Features, linear stages and outputs
+  stay on the first GPU. Borders travel through pinned host memory, because
+  direct GPU-to-GPU copies silently corrupt data on some PCIe hosts. This is
+  supported thanks to FireANTs.
+- `--assemble-feats-on-cpu` keeps the feature volumes in host memory; the
+  network and MIND-SSC still run on the GPU, one sliding-window batch or
+  MIND-SSC slab at a time. Lower the sliding window batch size when feature 
+  extraction is what does not fit. E.g., on a 240×240×155 volume,
+  `--sliding-window-params 128,1,0.8,gaussian,0.25` peaks at 1.7 GB against
+  6.2 GB at a batch of 4, for about 20% more time.
+
+One 192×160×192 AbdomenMRCT pair with the settings of the example below, timed
+after a warm-up run:
+
+`sw batch 1` is `--sliding-window-params 128,1,0.8,gaussian,0.25`, and the `+`
+rows add to `--assemble-feats-on-cpu`. A dash means the row was not timed.
+
+| Options | Peak per GPU | vs `none` | Time | Dice |
+|---|---|---|---|---|
+| `--loss-channel-chunk none` | 24.0 GB | 1.0× | 27 s | 0.857180 |
+| `--loss-channel-chunk 16` | 10.5 GB | 2.3× | 23 s | 0.857180 |
+| default (`--loss-channel-chunk 8`) | 8.2 GB | 2.9× | 23 s | 0.857180 |
+| `--loss-channel-chunk 2` | 8.2 GB | 2.9× | 29 s | 0.857180 |
+| `--loss-channel-chunk 1` | 8.2 GB | 2.9× | 51 s | 0.857121 |
+| `--device cuda:0,cuda:1` | 8.2, 3.5 GB | 2.9× | 22 s | 0.857443 |
+| `--assemble-feats-on-cpu` | 6.6 GB | 3.6× | 28 s | 0.857180 |
+| + chunk 2 | 6.5 GB | 3.7× | — | 0.857156 |
+| + sw batch 1 | 6.6 GB | 3.6× | — | 0.857181 |
+| + chunk 2 + sw batch 1 | 3.8 GB | 6.3× | 34 s | 0.857181 |
+| + chunk 1 + sw batch 1 | 3.3 GB | 7.3× | — | 0.857078 |
+| + chunk 2 + sw batch 1 + two GPUs | 2.4, 2.0 GB | 10.0× | 35 s | 0.857401 |
+
+The peak is whichever is larger, feature extraction or the loss, and they have
+separate controls: `--loss-channel-chunk` and `--device` lower the loss,
+`--assemble-feats-on-cpu` and the sliding-window batch lower extraction. Lowering
+one alone stops helping as soon as it drops below the other — which is why every
+chunk of 8 or less sits at the same 8.2 GB of feature extraction, and why chunk 2
+and a batch of 1 each save almost nothing on their own but together reach 3.8 GB.
+
+None of these change the objective, but a `masked_*` loss is a ratio, so the
+chunks accumulate a numerator and a denominator and divide once: results agree
+up to rounding, not bit for bit. Over the eight pairs below, chunking moves the
+mean Dice by 0.0004 and the worst pair by 0.0038, and the median landmark error
+of the BraTS-Reg example by 0.004 mm; two GPUs, 0.0003 and 0.0016. An affine +
+deformable 240×240×155 BraTS-Reg pair needs 15 GB by default, 38 GB with
+`--loss-channel-chunk none`.
+
+Rigid and affine stages read their features from host memory when
+`--assemble-feats-on-cpu` is set and their loss is chunked. Deformable `mi`
+stages shard and chunk like any other, reducing the intensity range and the
+joint histogram across slabs instead of a per-voxel loss; rigid and affine `mi`
+stages take every channel at once. For volumes that still do not fit, register
+fewer channels (`--features anatomix` or `intensity`) or pass a linear
+transform with `--initial-transform`.
+</details>
+
+<details>
+<summary><b>Reproducibility</b></summary>
+
+The FireANTs backend uses the CUDA kernels `install_fireants.sh` builds for 
+interpolation, the Adam update, and the FFT downsample, whenever `fireants_fused_ops`
+imports. The fused interpolator rounds differently from the PyTorch one, so a result
+depends on whether that build succeeded: over the eight pairs below, a median of
+4e-4 Dice and 2e-3 on the worst pair. `--fused-ops` is therefore `off` by
+default; `--fused-ops on` restores the kernels.
 </details>
 
 ## Examples
@@ -303,16 +374,18 @@ python anatomix-register.py --registration-pairs-csv pairs.csv \
     --output-dir batch-out
 ```
 
-**Large volumes on a small GPU.** Gradient checkpointing, a pyramid that
-stops at half resolution, and one sliding window at a time:
+**Large volumes on small GPUs.** A full-resolution deformable stage split over
+two GPUs, with the feature volumes in host memory and one sliding window at a
+time. Drop `--device` for a single GPU; everything else is unchanged.
 
 ```bash
 python anatomix-register.py --fixed fixed.nii.gz --moving moving.nii.gz \
     --initialization image-centers \
     --transform rigid,deformable --step-size 0.01,1.0 \
-    --shrink-factors 8x4x2,8x4x2 --iterations 100x100x100,100x100x100 \
-    --cc-kernel-widths 15x11x9,15x11x9 --smooth-grad-sigma na,1.0 --smooth-warp-sigma na,0.5 \
-    --gradient-checkpointing --sliding-window-params 128,1,0.8,gaussian,0.25 \
+    --shrink-factors 8x4x2,8x4x2x1 --iterations 100x100x100,100x100x100x100 \
+    --cc-kernel-widths 15x11x9,15x11x9x7 --smooth-grad-sigma na,1.0 --smooth-warp-sigma na,0.5 \
+    --device cuda:0,cuda:1 --assemble-feats-on-cpu \
+    --sliding-window-params 128,1,0.8,gaussian,0.25 \
     --output-dir large-out
 ```
 
@@ -337,6 +410,7 @@ above.
 ```bash
 python anatomix-register.py --registration-pairs-csv pairs.csv \
     --features anatomix+mindssc --backbone anatomix-dev-vit \
+    --fused-ops on \
     --transform deformable --loss masked_cc --step-size 1.0 \
     --shrink-factors 6x4x2x1 --iterations 100x100x100x100 --cc-kernel-widths 21x13x11x9 \
     --fixed-minclip -450 --fixed-maxclip 450 --moving-minclip 0 --moving-maxclip 20000 \

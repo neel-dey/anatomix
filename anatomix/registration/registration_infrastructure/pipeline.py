@@ -16,6 +16,7 @@ from .features import (
     combine_feature_channels,
     minmax_normalize,
     prepare_feature_channels,
+    prepare_feature_channels_on_host,
 )
 from .io_utils import (
     METRIC_COLUMNS,
@@ -49,6 +50,21 @@ def seed_everything(seed):
     torch.backends.cudnn.benchmark = False
 
 
+def select_devices(spec):
+    """Resolve ``--device`` to a list of devices; the first one runs everything but
+    the deformable stages, which are split over all of them."""
+    names = [name.strip() for name in spec.split(",")]
+    if len(names) == 1:
+        return [select_device(spec)]
+    devices = [torch.device(name) for name in names]
+    visible = torch.cuda.device_count()
+    for device in devices:
+        if device.index >= visible:
+            raise ValueError(f"--device: {device} is not visible ({visible} CUDA device(s)).")
+    torch.cuda.set_device(devices[0])
+    return devices
+
+
 def select_device(spec):
     """Resolve cpu/cuda/cuda:N; auto chooses the visible GPU with most free memory."""
     if spec == "cpu":
@@ -68,11 +84,12 @@ def select_device(spec):
     return device
 
 
-def warn_if_no_fused_ops():
-    if not FFO_AVAILABLE:
+def warn_if_no_fused_ops(requested):
+    """Complain only when the kernels were asked for and are not there."""
+    if requested == "on" and not FFO_AVAILABLE:
         print(
-            "[note] fireants_fused_ops is not available; FireANTs is using its "
-            "pure-PyTorch fallback. "
+            "[note] --fused-ops on, but fireants_fused_ops is not available; "
+            "FireANTs is using its pure-PyTorch fallback. "
             "Build the kernels with registration_backend/install_fireants.sh.",
             flush=True,
         )
@@ -181,11 +198,16 @@ class FeatureExtractor:
     """Turn a normalized intensity volume into the channels that FireANTs registers.
 
     The channels are anatomix network features (masked), MIND-SSC descriptors
-    and, for masked losses, the binary mask as the last channel."""
+    and, for masked losses, the binary mask as the last channel. With
+    ``--assemble-feats-on-cpu`` they are computed piecewise and assembled in host memory."""
 
     def __init__(self, args, model):
         self.features = args.features
         self.model = model
+        self.prepare = (
+            prepare_feature_channels_on_host if args.assemble_feats_on_cpu
+            else prepare_feature_channels
+        )
         self.config = dict(
             features=args.features,
             isotropic=bool(args.isotropic_features),
@@ -202,7 +224,7 @@ class FeatureExtractor:
 
     def __call__(self, image, normalized, spacing, mask, append_mask):
         """Replace ``image``'s array by its feature channels and return it as a FireANTs batch."""
-        primary, mind = prepare_feature_channels(
+        primary, mind = self.prepare(
             normalized, spacing, self.model, **self.config)
         image.array = combine_feature_channels(
             primary, mind, mask, self.features, append_mask=append_mask)

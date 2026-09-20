@@ -10,7 +10,7 @@ from anatomix.model.load_from_hf import (
 )
 from anatomix.model.network import Unet
 
-from .mindssc import MINDSSC
+from .mindssc import MINDSSC, MINDSSC_tiled
 
 
 def load_backbone(
@@ -88,8 +88,11 @@ def _isotropic_shape(shape, spacing):
 
 def _sliding_window_features(
     volume, model, window, sw_batch, overlap, mode, sigma, verbose=False,
+    out_device=None,
 ):
-    """Dense network features via MONAI sliding windows; halves the batch on CUDA OOM."""
+    """Dense network features via MONAI sliding windows; halves the batch on CUDA OOM.
+
+    The windows are stitched on ``out_device`` (the volume's device by default)."""
     batch = int(sw_batch)
     while True:
         try:
@@ -102,6 +105,7 @@ def _sliding_window_features(
                     overlap=overlap,
                     mode=mode,
                     sigma_scale=sigma,
+                    device=out_device,
                 )
         except (torch.cuda.OutOfMemoryError, RuntimeError) as exc:
             is_oom = isinstance(exc, torch.cuda.OutOfMemoryError) or any(
@@ -202,6 +206,67 @@ def prepare_feature_channels(
     return primary, mind
 
 
+def prepare_feature_channels_on_host(
+    image_norm,
+    spacing,
+    model,
+    *,
+    features,
+    isotropic,
+    window,
+    sw_batch,
+    overlap,
+    sw_mode,
+    sigma,
+    feature_normalization,
+    mindssc_radius,
+    mindssc_dilation,
+    verbose=False,
+):
+    """:func:`prepare_feature_channels` with the multi-channel volumes kept in host memory.
+
+    The GPU holds the intensity volume, one batch of sliding windows and one
+    MIND-SSC slab at a time; stitching, resampling and normalization run on the CPU."""
+    if features == "intensity":
+        return image_norm.cpu(), None
+
+    orig_shape = tuple(image_norm.shape[-3:])
+    iso_shape = _isotropic_shape(orig_shape, spacing) if isotropic else orig_shape
+    resample = iso_shape != orig_shape
+    volume = image_norm
+    if resample:
+        volume = F.interpolate(
+            image_norm, size=iso_shape, mode="trilinear", align_corners=True,
+        )
+
+    def on_original_grid(channels):
+        if not resample:
+            return channels
+        return F.interpolate(
+            channels, size=orig_shape, mode="trilinear", align_corners=True,
+        )
+
+    primary = None
+    if features in ("anatomix+mindssc", "anatomix"):
+        if model is None:
+            raise ValueError(
+                "A backbone model is required unless --features is 'mindssc' "
+                "or 'intensity'."
+            )
+        primary = _sliding_window_features(
+            volume, model, window, sw_batch, overlap, sw_mode, sigma, verbose,
+            out_device="cpu",
+        )
+        primary = normalize_features(on_original_grid(primary), feature_normalization)
+
+    mind = None
+    if features in ("anatomix+mindssc", "mindssc"):
+        mind = on_original_grid(
+            MINDSSC_tiled(volume, mindssc_radius, mindssc_dilation, out_device="cpu"))
+
+    return primary, mind
+
+
 def combine_feature_channels(primary, mind, mask, features, append_mask=False):
     """Build the registered image: gated primary channels, then MIND-SSC, then the mask.
 
@@ -211,10 +276,10 @@ def combine_feature_channels(primary, mind, mask, features, append_mask=False):
     parts = []
     if primary is not None and features != "mindssc":
         if mask is not None:
-            primary = primary * (mask > 0).to(primary.dtype)
+            primary = primary * (mask > 0).to(device=primary.device, dtype=primary.dtype)
         parts.append(primary)
     if mind is not None and features in ("anatomix+mindssc", "mindssc"):
         parts.append(mind)
     if append_mask:
-        parts.append((mask > 0).to(parts[0].dtype))
+        parts.append((mask > 0).to(device=parts[0].device, dtype=parts[0].dtype))
     return parts[0] if len(parts) == 1 else torch.cat(parts, dim=1)

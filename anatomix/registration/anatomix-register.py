@@ -17,6 +17,12 @@ the outputs. The modules it uses live in ``registration_infrastructure/``:
     metrics.py    Dice, landmark error, fold count
     pipeline.py   the helpers called below
 """
+import sys
+
+# Reads --fused-ops and must run before anything imports FireANTs.
+from anatomix.registration.registration_infrastructure.fused_ops import configure
+configure(sys.argv[1:])
+
 import torch
 
 from anatomix.registration.registration_infrastructure import cli, pipeline
@@ -32,9 +38,10 @@ from anatomix.registration.registration_infrastructure.warp_io import (
 )
 
 
-def register_pair(pair, index, args, stages, extract_features, device, paths):
+def register_pair(pair, index, args, stages, extract_features, devices, paths):
     """Register one pair, write its outputs, and return its metrics row."""
     label = f"pair {index}"
+    device = devices[0]
     if args.verbose:
         print(f"[{label}] fixed={pair['fixed']} moving={pair['moving']}", flush=True)
 
@@ -79,6 +86,7 @@ def register_pair(pair, index, args, stages, extract_features, device, paths):
         initial_transform=pipeline.load_initial_transform(pair),
         reextract_moving=moving_features,
         has_mask_channel=masked,
+        devices=devices,
         verbose=args.verbose,
     )
     grid = result.warped_coordinates
@@ -126,11 +134,13 @@ def main(argv=None):
         parser.error(str(error))
 
     pipeline.seed_everything(args.seed)
-    pipeline.warn_if_no_fused_ops()
-    device = pipeline.select_device(args.device)
+    pipeline.warn_if_no_fused_ops(args.fused_ops)
+    devices = pipeline.select_devices(args.device)
+    device = devices[0]
     if args.verbose:
-        name = f" ({torch.cuda.get_device_name(device)})" if device.type == "cuda" else ""
-        print(f"[device] {device}{name}", flush=True)
+        for d in devices:
+            name = f" ({torch.cuda.get_device_name(d)})" if d.type == "cuda" else ""
+            print(f"[device] {d}{name}", flush=True)
 
     # The feature network is loaded once for the whole batch. 'mindssc' and
     # 'intensity' features need no network.
@@ -147,13 +157,15 @@ def main(argv=None):
     with pipeline.MetricsWriter(paths.metrics_csv, input_columns) as writer:
         for index, pair in enumerate(pairs):
             if device.type == "cuda":
-                torch.cuda.reset_peak_memory_stats(device)
+                for d in devices:
+                    torch.cuda.reset_peak_memory_stats(d)
             metrics = register_pair(
-                pair, index, args, stages, extract_features, device, paths)
+                pair, index, args, stages, extract_features, devices, paths)
             writer.write(pair, metrics)
             if args.verbose and device.type == "cuda":
-                peak = torch.cuda.max_memory_allocated(device) / 2 ** 30
-                print(f"  -> peak GPU memory: {peak:.1f} GiB", flush=True)
+                peaks = ", ".join(
+                    f"{torch.cuda.max_memory_allocated(d) / 2 ** 30:.1f}" for d in devices)
+                print(f"  -> peak GPU memory: {peaks} GiB", flush=True)
             torch.cuda.empty_cache()
     if args.verbose:
         print(f"[done] wrote metrics: {paths.metrics_csv}", flush=True)

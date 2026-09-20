@@ -28,8 +28,26 @@ VALID_LOSSES = {"cc", "mi", "mse", "masked_cc", "masked_mi", "masked_mse"}
 CC_LOSSES = {None, "cc", "masked_cc"}
 # FireANTs floors every pyramid level at this many voxels per axis.
 MIN_IMG_SIZE = 32
+# Feature channels per loss evaluation. Chunking is on by default: it computes the same
+# objective and gradient, and on one AbdomenMRCT pair cut the peak from 23.9 to 8.2 GiB.
+DEFAULT_LOSS_CHANNEL_CHUNK = 8
 # Header tolerance for a mask/segmentation against its image (mm, direction cosines).
 GEOMETRY_ATOL = 1e-4
+
+
+def parse_channel_chunk(value):
+    """``--loss-channel-chunk``: a positive integer, or 'none' to chunk nothing."""
+    if value.strip().lower() == "none":
+        return None
+    try:
+        count = int(value)
+    except ValueError:
+        count = 0
+    if count < 1:
+        raise argparse.ArgumentTypeError(
+            f"expected a positive integer or 'none', got {value!r}."
+        )
+    return count
 
 
 # Parser
@@ -147,7 +165,7 @@ def build_parser():
         "For a deformable stage it is the rate of the deformation; for a rigid "
         "or affine stage it is the rate of the rotation or linear part, and "
         "the translation uses --translation-step-size. Default 1.0 for "
-        "deformable stages, 0.01 for rigid/affine stages.",
+        "deformable stages, 0.001 for rigid/affine stages.",
     )
     tf.add_argument(
         "--translation-step-size", default=None,
@@ -248,20 +266,39 @@ def build_parser():
     )
 
     misc = parser.add_argument_group("misc")
+    misc.add_argument(
+        "--fused-ops", choices=("on", "off"), default="off",
+        help="FireANTs' compiled CUDA kernels (default off). They are faster, but "
+        "the fused interpolator shifts the result slightly, so a run reproduces "
+        "across machines only when they are off.")
     misc.add_argument("--seed", type=int, default=12345, help="Random seed.")
     misc.add_argument("--tolerance", type=float, default=1e-6,
                       help="FireANTs convergence tolerance (loss slope over the last 10 iterations); use inf to disable early stopping.")
     misc.add_argument(
-        "--gradient-checkpointing", action=argparse.BooleanOptionalAction,
+        "--assemble-feats-on-cpu", action=argparse.BooleanOptionalAction,
         default=False,
-        help="Recompute the cross-correlation intermediates during the "
-        "backward pass instead of storing them, to reduce GPU memory "
-        "(cc and masked_cc stages only).",
+        help="Assemble the feature volumes in host memory instead of on the "
+        "GPU: the network and MIND-SSC still run on the GPU, one batch of "
+        "sliding windows or one slab at a time, but the volume they fill "
+        "lives on the CPU. Slower; results agree with the default up to "
+        "floating-point rounding. Rigid and affine stages read the volumes "
+        "from there a channel chunk at a time when their loss is chunked.",
+    )
+    misc.add_argument(
+        "--loss-channel-chunk", type=parse_channel_chunk,
+        default=DEFAULT_LOSS_CHANNEL_CHUNK, metavar="N",
+        help="Evaluate the loss of every stage N feature channels at a time "
+        "instead of all at once, for the same objective and gradient with "
+        f"less GPU memory (default {DEFAULT_LOSS_CHANNEL_CHUNK}). Pass 'none' "
+        "to evaluate every channel at once. Rigid and affine mi stages and "
+        "--device cpu ignore it.",
     )
     misc.add_argument(
         "--device", default="auto",
         help="Compute device: 'auto' (pick the visible CUDA device with the "
-        "most free memory), 'cpu', 'cuda', or 'cuda:N'. Honors "
+        "most free memory), 'cpu', 'cuda', or 'cuda:N'. A comma-separated "
+        "list such as 'cuda:0,cuda:1' splits the deformable stages over "
+        "several GPUs; everything else runs on the first one. Honors "
         "CUDA_VISIBLE_DEVICES, which also restricts 'auto'. Note that N is a "
         "CUDA index, which matches nvidia-smi's only when "
         "CUDA_DEVICE_ORDER=PCI_BUS_ID is set.",
@@ -350,9 +387,13 @@ def _split_stages(value, n, name):
 
 
 def _resolve_step_sizes(value, kinds, n):
-    """Per-stage Adam learning rate: 1.0 for deformable, 0.01 for linear stages."""
+    """Per-stage Adam learning rate: 1.0 for deformable, 0.001 for linear stages.
+
+    The linear rate is a fraction of the fixed image's physical radius per step. Much
+    above 0.001 a long schedule can walk a masked stage clean out of the fixed mask,
+    where the loss stops opposing it because it divides by the shrinking overlap."""
     if value is None:
-        return [1.0 if kinds[i] == "deformable" else 0.01 for i in range(n)]
+        return [1.0 if kinds[i] == "deformable" else 0.001 for i in range(n)]
     values = [float(p) for p in _split_stages(value, n, "--step-size")]
     if any(v <= 0 for v in values):
         raise ValueError("--step-size: values must be positive.")
@@ -515,7 +556,9 @@ def build_stages(args):
             "shrink": shrinks[i], "iters": iters[i], "cc_kernel": cc_kernels[i],
             "smooth_grad": grad_sigmas[i], "smooth_warp": warp_sigmas[i],
             "tolerance": args.tolerance,
-            "checkpointing": bool(args.gradient_checkpointing),
+            "channel_chunk": stage_channel_chunk(
+                args.loss_channel_chunk, kinds[i], losses[i], args.device
+            ),
         }
         for i in range(n)
     ]
@@ -998,14 +1041,31 @@ def validate_pairs(pairs, stages):
 
 
 def validate_device(spec):
-    """Validate the ``--device`` string (resolved to a torch device later)."""
+    """Validate the ``--device`` string (resolved to torch devices later)."""
     if spec in ("auto", "cpu", "cuda"):
         return
-    if spec.startswith("cuda:") and spec[5:].isdigit():
+    names = [name.strip() for name in spec.split(",")]
+    if all(name.startswith("cuda:") and name[5:].isdigit() for name in names):
+        if len(set(names)) != len(names):
+            raise ValueError(f"--device: {spec!r} lists a device twice.")
         return
     raise ValueError(
-        f"--device: expected 'auto', 'cpu', 'cuda', or 'cuda:N', got {spec!r}."
+        "--device: expected 'auto', 'cpu', 'cuda', 'cuda:N', or a list "
+        f"'cuda:N,cuda:M', got {spec!r}."
     )
+
+
+def stage_channel_chunk(chunk, kind, loss, device_spec):
+    """``--loss-channel-chunk`` for one stage, or None where it does not apply.
+
+    Chunking saves GPU memory, so a CPU run takes every channel at once. A rigid or
+    affine stage also needs a per-voxel loss; a deformable stage goes through the
+    sharded backend, which sums mi's histograms instead."""
+    if chunk is None or device_spec == "cpu":
+        return None
+    if kind != "deformable" and (loss or "").endswith("mi"):
+        return None
+    return chunk
 
 
 def prepare(args):
